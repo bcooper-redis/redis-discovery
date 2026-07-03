@@ -1,0 +1,344 @@
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --border: #dde1e6;
+  --text: #1c2126;
+  --text-muted: #5b6470;
+  --primary: #205081;
+  --primary-hover: #163b60;
+  --ok: #1a7f4f;
+  --ok-bg: #e6f4ec;
+  --warn: #9a6400;
+  --warn-bg: #fbf0dc;
+  --error: #b3261e;
+  --error-bg: #fbe6e4;
+  --muted-bg: #eceef1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+header.topnav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  padding: 0.85rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+header.topnav nav {
+  flex-wrap: wrap;
+}
+
+header.topnav .brand {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--primary);
+  margin-right: 0.5rem;
+}
+
+header.topnav nav {
+  display: flex;
+  gap: 1.1rem;
+}
+
+header.topnav nav a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.92rem;
+  padding: 0.25rem 0;
+  border-bottom: 2px solid transparent;
+}
+
+header.topnav nav a:hover {
+  color: var(--text);
+}
+
+header.topnav nav a.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+main {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.75rem 1.5rem 3rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.25rem;
+}
+
+p.lead {
+  color: var(--text-muted);
+  margin: 0 0 1.5rem;
+  font-size: 0.92rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.card h2 {
+  font-size: 1rem;
+  margin: 0 0 1rem;
+}
+
+.field-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.field {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.field input[type='text'],
+.field input[type='number'],
+.field input[type='password'],
+.field textarea {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 3.2rem;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1 1 200px;
+}
+
+.checkbox-field label {
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.hint {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin: 0.15rem 0 0;
+}
+
+button,
+.btn {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button:hover,
+.btn:hover {
+  background: var(--primary-hover);
+}
+
+button.secondary,
+.btn.secondary {
+  background: var(--muted-bg);
+  color: var(--text);
+}
+
+button.secondary:hover,
+.btn.secondary:hover {
+  background: var(--border);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.error-banner {
+  background: var(--error-bg);
+  color: var(--error);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.87rem;
+  margin-bottom: 1rem;
+  display: none;
+}
+
+.error-banner.visible {
+  display: block;
+}
+
+.status-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.status-pill {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.status-pill.idle {
+  background: var(--muted-bg);
+  color: var(--text-muted);
+}
+.status-pill.scanning {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.status-pill.done {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.status-pill.error {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.55rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+tbody tr:hover {
+  background: var(--bg);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.badge.open,
+.badge.authenticated {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.badge.auth_required,
+.badge.not_attempted {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.badge.error,
+.badge.auth_failed {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.empty-state {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+dialog {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 360px;
+  width: 90%;
+}
+
+dialog::backdrop {
+  background: rgba(20, 24, 28, 0.45);
+}
+
+dialog h3 {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+}
+
+.save-note {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin-top: 0.75rem;
+}
+
+.about-section {
+  margin-bottom: 1.5rem;
+}
+
+.about-section h2 {
+  font-size: 1rem;
+}
+
+.about-section ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.about-section li {
+  margin-bottom: 0.3rem;
+}

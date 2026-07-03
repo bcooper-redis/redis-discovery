@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Redis Scanner — Settings</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body hx-boost="true">
+    <header class="topnav">
+      <span class="brand">Redis Scanner</span>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/results.html">Results</a>
+        <a href="/settings.html" class="active">Settings</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Default scan settings</h1>
+      <p class="lead">
+        These defaults pre-fill the scan form. They are stored only in this browser and are never
+        sent to the server until you start a scan.
+      </p>
+
+      <form id="settings-form" class="card" method="post" hx-boost="false">
+        <div class="field-row">
+          <div class="field">
+            <label for="ports">Default ports</label>
+            <input type="text" id="ports" name="ports" placeholder="6379,6380-6385" />
+          </div>
+          <div class="field">
+            <label for="timeoutMs">Default timeout (ms)</label>
+            <input type="number" id="timeoutMs" name="timeoutMs" min="1" />
+          </div>
+          <div class="field">
+            <label for="concurrency">Default concurrency</label>
+            <input type="number" id="concurrency" name="concurrency" min="1" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="checkbox-field">
+            <input type="checkbox" id="tls" name="tls" />
+            <label for="tls">Attempt TLS first</label>
+          </div>
+          <div class="checkbox-field">
+            <input type="checkbox" id="tlsSkipVerify" name="tlsSkipVerify" />
+            <label for="tlsSkipVerify">Skip certificate verification</label>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit">Save Defaults</button>
+          <button type="button" class="secondary" id="reset-btn">Reset to Defaults</button>
+        </div>
+        <p id="saved-note" class="save-note" style="display: none">Saved.</p>
+      </form>
+    </main>
+
+    <script src="/htmx.min.js"></script>
+    <script src="/settings.js"></script>
+  </body>
+</html>

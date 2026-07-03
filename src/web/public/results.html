@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Redis Scanner — Results</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body hx-boost="true">
+    <header class="topnav">
+      <span class="brand">Redis Scanner</span>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/results.html" class="active">Results</a>
+        <a href="/settings.html">Settings</a>
+        <a href="/about.html">About</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Scan results</h1>
+      <p class="lead">
+        Read-only inventory of discovered instances. Nothing here is written back to the scanned
+        hosts.
+      </p>
+
+      <div class="status-banner">
+        <span id="status-pill" class="status-pill idle">idle</span>
+        <span id="status-detail"></span>
+        <span class="actions" style="margin-left: auto">
+          <button type="button" id="refresh-btn" class="secondary">Refresh</button>
+          <a href="/api/export/csv" class="btn secondary" download>Export CSV</a>
+        </span>
+      </div>
+
+      <div id="error-banner" class="error-banner"></div>
+
+      <div class="card" style="overflow-x: auto">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>Host</th>
+              <th>Port</th>
+              <th>TLS</th>
+              <th>Product</th>
+              <th>Version</th>
+              <th>Auth</th>
+              <th>Role</th>
+              <th>Mode</th>
+              <th>OS</th>
+              <th>Uptime</th>
+              <th>Latency</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+        <div id="empty-state" class="empty-state" style="display: none"></div>
+      </div>
+    </main>
+
+    <dialog id="auth-dialog">
+      <h3>Authenticate <span id="auth-target"></span></h3>
+      <form id="auth-form" method="post" hx-boost="false">
+        <div class="field" style="margin-bottom: 0.75rem">
+          <label for="auth-username">Username</label>
+          <input
+            type="text"
+            id="auth-username"
+            placeholder="optional — ACL user"
+            autocomplete="off"
+          />
+        </div>
+        <div class="field" style="margin-bottom: 1rem">
+          <label for="auth-password">Password</label>
+          <input type="password" id="auth-password" autocomplete="off" required />
+        </div>
+        <div id="auth-dialog-error" class="error-banner" style="margin-bottom: 0.75rem"></div>
+        <div class="actions">
+          <button type="submit">Authenticate</button>
+          <button type="button" class="secondary" id="auth-cancel-btn">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/htmx.min.js"></script>
+    <script src="/results.js"></script>
+  </body>
+</html>

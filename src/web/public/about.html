@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Redis Scanner — About</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body hx-boost="true">
+    <header class="topnav">
+      <span class="brand">Redis Scanner</span>
+      <nav>
+        <a href="/index.html">Dashboard</a>
+        <a href="/results.html">Results</a>
+        <a href="/settings.html">Settings</a>
+        <a href="/about.html" class="active">About</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Redis Scanner</h1>
+      <p class="lead">Version 0.1.0</p>
+
+      <div class="card">
+        <div class="about-section">
+          <h2>What this is</h2>
+          <p>
+            A cross-platform utility that safely discovers Redis-compatible databases (Redis OSS,
+            Redis Enterprise, Valkey, KeyDB where possible) on networks you are authorized to scan,
+            and provides read-only inventory through this Web UI and the <code>rscan</code> CLI.
+          </p>
+        </div>
+
+        <div class="about-section">
+          <h2>Principles</h2>
+          <ul>
+            <li>Read-only by default — no data-modifying commands are ever sent.</li>
+            <li>
+              No credential persistence — passwords are used only for the request in flight, never
+              stored or logged.
+            </li>
+            <li>Local-first — runs entirely on your machine; results are not sent anywhere.</li>
+            <li>Cross-platform and protocol-aware discovery.</li>
+            <li>Operator-friendly — clear CLI and Web UI, both backed by the same scan engine.</li>
+          </ul>
+        </div>
+
+        <div class="about-section">
+          <h2>Out of scope</h2>
+          <ul>
+            <li>No writes to any scanned instance.</li>
+            <li>No credential storage.</li>
+            <li>No brute-force or credential-guessing behavior.</li>
+            <li>No scheduled or recurring scans.</li>
+            <li>No interactive command console.</li>
+          </ul>
+        </div>
+
+        <div class="about-section">
+          <h2>Use responsibly</h2>
+          <p>Only scan networks and hosts you are authorized to test.</p>
+        </div>
+      </div>
+    </main>
+
+    <script src="/htmx.min.js"></script>
+  </body>
+</html>
