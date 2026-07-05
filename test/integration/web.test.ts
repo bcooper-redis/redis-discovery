@@ -536,6 +536,11 @@ describe('Web UI static pages', () => {
     expect(await r.text()).toContain('Scan results');
   });
 
+  it('excludes the CSV export link from hx-boost, so it downloads instead of AJAX-swapping', async () => {
+    const text = await (await fetch(`${server.url}/results.html`)).text();
+    expect(text).toMatch(/<a[^>]+href="\/api\/export\/csv"[^>]*hx-boost="false"/);
+  });
+
   it('serves the Settings page', async () => {
     const r = await fetch(`${server.url}/settings.html`);
     expect(r.status).toBe(200);
