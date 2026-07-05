@@ -1,6 +1,7 @@
 import * as net from 'net';
 import { describe, it, expect } from 'vitest';
 import { buildTargets, scanTargets } from '../../../src/scanner/scan';
+import { createScanController } from '../../../src/scanner/control';
 
 function startServer(): Promise<{ port: number; close: () => Promise<void> }> {
   const server = net.createServer();
@@ -120,5 +121,38 @@ describe('scanTargets', () => {
 
     expect(results).toHaveLength(5);
     expect(results.every((r) => r.open)).toBe(true);
+  });
+
+  it('a stopped controller skips targets as not-open without connecting', async () => {
+    const srv = await startServer();
+    const controller = createScanController();
+    controller.stop();
+
+    const results = await scanTargets([{ host: '127.0.0.1', port: srv.port }], { controller });
+    await srv.close();
+
+    expect(results).toEqual([{ host: '127.0.0.1', port: srv.port, open: false, latencyMs: 0 }]);
+  });
+
+  it('a paused controller holds targets until resumed', async () => {
+    const srv = await startServer();
+    const controller = createScanController();
+    controller.pause();
+
+    const promise = scanTargets([{ host: '127.0.0.1', port: srv.port }], { controller });
+    let settled = false;
+    void promise.then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    controller.resume();
+    const results = await promise;
+    await srv.close();
+
+    expect(results[0].open).toBe(true);
   });
 });

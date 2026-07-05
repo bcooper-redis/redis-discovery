@@ -8,6 +8,11 @@ import type { DiscoveryResult } from '../../src/types';
 
 const REDIS_8_PORT = parseInt(process.env.REDIS_8_PORT ?? '6379', 10);
 const VALKEY_PORT = parseInt(process.env.VALKEY_PORT ?? '6380', 10);
+const REDIS_AUTH_PORT = process.env.REDIS_AUTH_PORT
+  ? parseInt(process.env.REDIS_AUTH_PORT, 10)
+  : null;
+const REDIS_AUTH_PASSWORD = process.env.REDIS_AUTH_PASSWORD ?? 'testpassword';
+const describeIf = (condition: boolean) => (condition ? describe : describe.skip);
 
 // ---------------------------------------------------------------------------
 // Test server helpers
@@ -58,6 +63,16 @@ const FIXTURE: DiscoveryResult = {
     os: 'Linux',
     uptimeSeconds: 3600,
     role: 'master',
+    replication: {
+      connectedReplicas: [],
+      masterHost: null,
+      masterPort: null,
+      masterLinkStatus: null,
+    },
+    memory: { usedMemoryBytes: null, maxMemoryBytes: null, maxMemoryPolicy: null },
+    keyspace: [],
+    modules: [],
+    clusterInfo: null,
   },
 };
 
@@ -106,9 +121,32 @@ describe('POST /api/scan', () => {
       }),
     });
     expect(r.status).toBe(202);
-    const body = await r.json();
+    const body = (await r.json()) as { status: string };
     expect(body.status).toBe('scanning');
   });
+
+  it('echoes back the submitted targets with autoDetected: false', async () => {
+    await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cidrs: ['127.0.0.1/32'], ports: [REDIS_8_PORT] }),
+    });
+    const scanState = await poll(server.url);
+    expect(scanState.targets).toEqual(['127.0.0.1/32']);
+    expect(scanState.autoDetected).toBe(false);
+  }, 20000);
+
+  it('sets autoDetected: true and populates targets when cidrs is omitted', async () => {
+    const r = await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ports: [REDIS_8_PORT] }),
+    });
+    expect(r.status).toBe(202);
+    const scanState = await poll(server.url);
+    expect(scanState.autoDetected).toBe(true);
+    expect(scanState.targets.length).toBeGreaterThan(0);
+  }, 20000);
 
   it('returns 409 when a scan is already running', async () => {
     // Start first scan
@@ -143,6 +181,23 @@ describe('POST /api/scan', () => {
     expect(redis?.product).toBe('redis');
     expect(redis?.version).toMatch(/^8\./);
     expect(redis?.anonymousStatus).toBe('open');
+  }, 20000);
+
+  it('finds Redis 8.x when scanning a hostname target instead of an IP', async () => {
+    await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cidrs: ['localhost'],
+        ports: [REDIS_8_PORT],
+        timeoutMs: 3000,
+      }),
+    });
+    const scanState = await poll(server.url);
+    expect(scanState.status).toBe('done');
+    const redis = scanState.results.find((r) => r.port === REDIS_8_PORT);
+    expect(redis?.host).toBe('127.0.0.1');
+    expect(redis?.product).toBe('redis');
   }, 20000);
 
   it('finds both Redis and Valkey in a multi-port scan', async () => {
@@ -195,6 +250,169 @@ describe('POST /api/scan', () => {
     expect(scanState.progress.scanTotal).toBeGreaterThan(0);
     expect(scanState.progress.probeDone).toBeGreaterThanOrEqual(0);
   }, 20000);
+
+  it('elapsedMs is null when idle, then freezes once the scan is done', async () => {
+    const idle = (await (await fetch(`${server.url}/api/results`)).json()) as ScanState;
+    expect(idle.elapsedMs).toBeNull();
+
+    await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cidrs: ['127.0.0.1/32'],
+        ports: [REDIS_8_PORT],
+        timeoutMs: 3000,
+      }),
+    });
+    const doneState = await poll(server.url);
+    expect(doneState.elapsedMs).not.toBeNull();
+    expect(doneState.elapsedMs!).toBeGreaterThanOrEqual(0);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const later = (await (await fetch(`${server.url}/api/results`)).json()) as ScanState;
+    expect(later.elapsedMs).toBe(doneState.elapsedMs);
+  }, 20000);
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/scan/pause, /resume, /stop, /restart
+// ---------------------------------------------------------------------------
+
+describe('POST /api/scan/pause, /resume, /stop, /restart', () => {
+  it('pause returns 409 when idle', async () => {
+    const r = await fetch(`${server.url}/api/scan/pause`, { method: 'POST' });
+    expect(r.status).toBe(409);
+  });
+
+  it('resume returns 409 when not paused', async () => {
+    const r = await fetch(`${server.url}/api/scan/resume`, { method: 'POST' });
+    expect(r.status).toBe(409);
+  });
+
+  it('stop returns 409 when idle', async () => {
+    const r = await fetch(`${server.url}/api/scan/stop`, { method: 'POST' });
+    expect(r.status).toBe(409);
+  });
+
+  it('restart returns 400 when there is no previous scan', async () => {
+    const r = await fetch(`${server.url}/api/scan/restart`, { method: 'POST' });
+    expect(r.status).toBe(400);
+  });
+
+  it('pause holds queued targets until resume, then the scan completes', async () => {
+    // concurrency:1 with two unreachable addresses (silently dropped, not
+    // refused) guarantees the second target is still queued — not yet
+    // started — when pause() lands, giving a deterministic window to prove
+    // it's actually held back rather than racing a fast localhost scan.
+    await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cidrs: ['10.255.255.0/30'],
+        ports: [REDIS_8_PORT],
+        timeoutMs: 500,
+        concurrency: 1,
+      }),
+    });
+
+    const pauseRes = await fetch(`${server.url}/api/scan/pause`, { method: 'POST' });
+    expect(pauseRes.status).toBe(200);
+    const paused = (await pauseRes.json()) as ScanState;
+    expect(paused.status).toBe('paused');
+
+    // Longer than 2x timeoutMs: the first target has long since timed out,
+    // so the second would already be running (or the scan already done) if
+    // pause hadn't actually held it back.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const stillPaused = (await (await fetch(`${server.url}/api/results`)).json()) as ScanState;
+    expect(stillPaused.status).toBe('paused');
+    // elapsedMs must not have grown while paused, despite the 1200ms wait.
+    expect(stillPaused.elapsedMs).toBe(paused.elapsedMs);
+
+    const resumeRes = await fetch(`${server.url}/api/scan/resume`, { method: 'POST' });
+    expect(resumeRes.status).toBe(200);
+    expect(((await resumeRes.json()) as ScanState).status).toBe('scanning');
+
+    const finalState = await poll(server.url, 10000);
+    expect(finalState.status).toBe('done');
+    // Active time only (~2x500ms timeouts) — if the 1200ms paused gap had
+    // leaked into elapsed, this would be well over 2000ms instead.
+    expect(finalState.elapsedMs!).toBeLessThan(1500);
+  }, 20000);
+
+  it('stop ends the scan immediately with status stopped', async () => {
+    await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cidrs: ['10.255.255.0/30'],
+        ports: [REDIS_8_PORT],
+        timeoutMs: 3000,
+      }),
+    });
+
+    const stopRes = await fetch(`${server.url}/api/scan/stop`, { method: 'POST' });
+    expect(stopRes.status).toBe(200);
+    expect(((await stopRes.json()) as ScanState).status).toBe('stopped');
+
+    // Stays stopped — the still-draining background run must not flip it
+    // back to done once its in-flight connections finish timing out.
+    await new Promise((resolve) => setTimeout(resolve, 3200));
+    const afterDrain = (await (await fetch(`${server.url}/api/results`)).json()) as ScanState;
+    expect(afterDrain.status).toBe('stopped');
+  }, 20000);
+
+  it('restart returns 409 while a scan is running', async () => {
+    await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cidrs: ['127.0.0.1/32'], ports: [REDIS_8_PORT], timeoutMs: 3000 }),
+    });
+    const r = await fetch(`${server.url}/api/scan/restart`, { method: 'POST' });
+    expect(r.status).toBe(409);
+  });
+
+  it('restart re-runs the previous scan and finds the same instance', async () => {
+    await fetch(`${server.url}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cidrs: ['127.0.0.1/32'], ports: [REDIS_8_PORT], timeoutMs: 3000 }),
+    });
+    await poll(server.url);
+
+    const restartRes = await fetch(`${server.url}/api/scan/restart`, { method: 'POST' });
+    expect(restartRes.status).toBe(202);
+
+    const finalState = await poll(server.url);
+    expect(finalState.status).toBe('done');
+    expect(finalState.targets).toEqual(['127.0.0.1/32']);
+    const redis = finalState.results.find((r) => r.port === REDIS_8_PORT);
+    expect(redis?.product).toBe('redis');
+  }, 20000);
+
+  describeIf(REDIS_AUTH_PORT !== null)('restart against an auth-required host', () => {
+    it('never resends the original password — restart comes back auth_required', async () => {
+      await fetch(`${server.url}/api/scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cidrs: ['127.0.0.1/32'],
+          ports: [REDIS_AUTH_PORT],
+          timeoutMs: 3000,
+          password: REDIS_AUTH_PASSWORD,
+        }),
+      });
+      const first = await poll(server.url);
+      expect(first.results[0]?.authenticatedStatus).toBe('authenticated');
+
+      await fetch(`${server.url}/api/scan/restart`, { method: 'POST' });
+      const restarted = await poll(server.url);
+      // Credentials are never persisted server-side, so the restarted scan
+      // runs anonymously — proving the original password wasn't resent.
+      expect(restarted.results[0]?.anonymousStatus).toBe('auth_required');
+      expect(restarted.results[0]?.authenticatedStatus).toBe('not_attempted');
+    }, 20000);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -209,7 +427,12 @@ describe('POST /api/authenticate', () => {
       body: JSON.stringify({ host: '127.0.0.1', port: REDIS_8_PORT, password: 'anypass' }),
     });
     expect(r.status).toBe(200);
-    const body = await r.json();
+    const body = (await r.json()) as {
+      host: string;
+      port: number;
+      authenticated: boolean;
+      wrongPassword: boolean;
+    };
     // Open Redis: no auth required, any credentials accepted (ERR → treated as open)
     expect(body.host).toBe('127.0.0.1');
     expect(body.port).toBe(REDIS_8_PORT);

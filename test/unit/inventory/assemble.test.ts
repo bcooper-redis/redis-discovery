@@ -5,6 +5,14 @@ import type { ProbeResult } from '../../../src/probe/index';
 
 const BASE_TCP: TcpProbeResult = { host: '10.0.0.1', port: 6379, open: true, latencyMs: 5 };
 
+const NO_REPLICATION = {
+  connectedReplicas: [],
+  masterHost: null,
+  masterPort: null,
+  masterLinkStatus: null,
+};
+const NO_MEMORY = { usedMemoryBytes: null, maxMemoryBytes: null, maxMemoryPolicy: null };
+
 const OPEN_PROBE: ProbeResult = {
   isRedis: true,
   authRequired: false,
@@ -16,6 +24,16 @@ const OPEN_PROBE: ProbeResult = {
   os: 'Linux',
   uptimeSeconds: 3600,
   role: 'master',
+  replication: {
+    connectedReplicas: [{ ip: '127.0.0.1', port: 6380, state: 'online', offset: 14, lag: 0 }],
+    masterHost: null,
+    masterPort: null,
+    masterLinkStatus: null,
+  },
+  memory: { usedMemoryBytes: 1048576, maxMemoryBytes: null, maxMemoryPolicy: 'noeviction' },
+  keyspace: [{ db: 0, keys: 5, expires: 1, avgTtlMs: 0 }],
+  modules: [{ name: 'search', version: 20811, path: '/usr/lib/redis/modules/redisearch.so' }],
+  clusterInfo: null,
   rawInfo: '# Server\nredis_version:8.0.0\n',
 };
 
@@ -30,6 +48,11 @@ const AUTH_PROBE: ProbeResult = {
   os: null,
   uptimeSeconds: null,
   role: null,
+  replication: NO_REPLICATION,
+  memory: NO_MEMORY,
+  keyspace: [],
+  modules: [],
+  clusterInfo: null,
   rawInfo: null,
 };
 
@@ -46,6 +69,11 @@ const NOT_REDIS_PROBE: ProbeResult = {
   os: null,
   uptimeSeconds: null,
   role: null,
+  replication: NO_REPLICATION,
+  memory: NO_MEMORY,
+  keyspace: [],
+  modules: [],
+  clusterInfo: null,
   rawInfo: null,
 };
 
@@ -133,6 +161,15 @@ describe('assembleResult — inventory', () => {
     expect(inventory!.os).toBe('Linux');
     expect(inventory!.uptimeSeconds).toBe(3600);
     expect(inventory!.role).toBe('master');
+  });
+
+  it('passes through replication, memory, keyspace, modules, and clusterInfo unchanged', () => {
+    const { inventory } = assembleResult(BASE_TCP, OPEN_PROBE, false);
+    expect(inventory!.replication).toBe(OPEN_PROBE.replication);
+    expect(inventory!.memory).toBe(OPEN_PROBE.memory);
+    expect(inventory!.keyspace).toBe(OPEN_PROBE.keyspace);
+    expect(inventory!.modules).toBe(OPEN_PROBE.modules);
+    expect(inventory!.clusterInfo).toBe(OPEN_PROBE.clusterInfo);
   });
 
   it('inventory is null when authRequired', () => {

@@ -79,7 +79,7 @@ rscan serve
 
 | Flag | Default | Description |
 |---|---|---|
-| `-c, --cidr <cidr>` | auto-detected local subnets | Target CIDR. Repeatable: `-c 10.0.0.0/24 -c 192.168.1.0/24` |
+| `-c, --cidr <target>` | auto-detected local subnets | CIDR, IP, or hostname to scan. Repeatable: `-c 10.0.0.0/24 -c redis.example.com`. Hostnames are resolved via DNS (IPv4/A records only) and every resolved address is scanned. |
 | `-p, --port <ports>` | `6379` | Ports to scan — a single port, comma list, or ranges: `6379,6380-6385` |
 | `-t, --timeout <ms>` | `1000` | Per-connection timeout in milliseconds |
 | `--concurrency <n>` | `100` | Max concurrent connection attempts |
@@ -114,12 +114,15 @@ The server is entirely local — it doesn't call out to any external service. Bi
 
 Open the address `rscan serve` prints (default `http://localhost:3000`). Four pages, linked from the top nav:
 
-- **Dashboard** — configure and start a scan: CIDR ranges (one per line), ports, timeout, concurrency, TLS options, and optional credentials for this scan only. Submitting takes you to Results.
-- **Results** — live scan status and progress while a scan runs, then a table of discovered instances (host, port, TLS, product, version, auth status, role, mode, OS, uptime, latency). Each row has an **Authenticate** button that opens a dialog for that host's credentials — submitting re-probes with them and updates the row's inventory in place. **Export CSV** downloads the current results.
+- **Dashboard** — configure and start a scan: targets (CIDR ranges, bare IPs, or hostnames, one per line — hostnames are resolved via DNS and every resolved address is scanned), ports, timeout, concurrency, TLS options, and optional credentials for this scan only. Submitting takes you to Results.
+- **Results** — a target banner showing what's being (or was) scanned, live status and progress while a scan runs, then a table of discovered instances: host, port, TLS, product, version, auth status, role, mode, cluster state, connected replica count, memory usage, key count, loaded modules, OS, uptime, and latency. Each row has an **Authenticate** button that opens a dialog for that host's credentials — submitting re-probes with them and updates the row's inventory in place. **Export CSV** downloads the current results with the same columns.
+  - **Pause** / **Resume** — freezes and resumes a running scan. Already-open connections finish naturally; nothing new starts until you resume.
+  - **Stop** — ends the scan immediately, keeping whatever results were found so far.
+  - **Restart** — re-runs the last scan's exact targets and options. Credentials are never persisted, so a restarted scan always runs anonymously — re-authenticate per host with the Authenticate button if needed.
 - **Settings** — non-sensitive scan defaults (ports, timeout, concurrency, TLS options) that pre-fill the Dashboard form. These are stored only in your browser's `localStorage` and are never sent anywhere until you actually start a scan. Credentials are never stored here or anywhere else.
 - **About** — a summary of the tool's principles and non-goals.
 
-Only one scan runs at a time; starting a new one while another is in progress returns a conflict until the first finishes.
+Only one scan runs at a time; starting a new one while another is in progress (scanning or paused) returns a conflict until it's finished or stopped.
 
 ## HTTP API
 
@@ -127,13 +130,19 @@ Only one scan runs at a time; starting a new one while another is in progress re
 
 | Method & path | Purpose |
 |---|---|
-| `POST /api/scan` | Start a scan. Body: `{ cidrs?, ports?, timeoutMs?, concurrency?, tls?, tlsSkipVerify?, username?, password? }`. Returns `202` or `409` if one's already running. |
-| `GET /api/results` | Current scan status, progress, and results. |
+| `POST /api/scan` | Start a scan. Body: `{ cidrs?, ports?, timeoutMs?, concurrency?, tls?, tlsSkipVerify?, username?, password? }`. Returns `202` or `409` if one's already running or paused. |
+| `POST /api/scan/pause` | Pause the running scan. `409` if none is running. |
+| `POST /api/scan/resume` | Resume a paused scan. `409` if none is paused. |
+| `POST /api/scan/stop` | Stop the running or paused scan, keeping results found so far. `409` if neither. |
+| `POST /api/scan/restart` | Re-run the last scan's targets and options (never its credentials). `400` if there's no previous scan, `409` if one is currently running or paused. |
+| `GET /api/results` | Current scan status (`idle`, `scanning`, `paused`, `done`, `error`, or `stopped`), progress, targets, and results. |
 | `POST /api/authenticate` | Lightweight auth check against a single host — `{ host, port, username?, password }` → `{ authenticated, wrongPassword }`. Doesn't update scan state. |
 | `POST /api/inventory` | Authenticate against a single host **and** return/update its full inventory — `{ host, port, username?, password }` → the updated result. This is what the Results page's Authenticate dialog uses. |
 | `GET /api/export/csv` | Download current results as CSV. |
 
 Credentials are accepted in request bodies (never in a URL) and are never echoed back in any response, logged, or persisted.
+
+Each result's `inventory` includes `replication` (connected replicas, or master host/port if this node is itself a replica), `memory` (used bytes, max memory, eviction policy), `keyspace` (per-database key/expiry counts), `modules` (name + version of anything loaded via `MODULE LIST`), and `clusterInfo` (state and slot coverage, populated only when the node reports cluster mode).
 
 ## Security & responsible use
 
@@ -151,6 +160,8 @@ Credentials are accepted in request bodies (never in a URL) and are never echoed
 **A live Redis reports as "not Redis."** — If you're scanning through a restrictive ACL, confirm the account can at least run `INFO` (PING alone being denied is handled correctly and won't cause this). A closed port or a non-RESP service on that port will also show this way — that's by design.
 
 **"Scan target too large: N hosts requested... (max 65536)."** — Your combined CIDR ranges exceed the safety cap. Scan a smaller or more specific range, or run multiple scans.
+
+**"Could not resolve hostname ... ENOTFOUND" or the scan just fails when using a hostname target.** — The whole scan is rejected if any one hostname target fails to resolve, the same way an invalid CIDR is rejected. Double-check the spelling and that it resolves from this machine (`nslookup <hostname>` or `dig <hostname>`). Hostnames resolve to IPv4 addresses only (A records) — a host with only an IPv6 (AAAA) record won't resolve, since scanning is IPv4-only throughout.
 
 **TLS scan falls back to plain unexpectedly.** — A TLS handshake failure (wrong port, non-TLS server, or an untrusted cert without `--tls-skip-verify`) causes an automatic fallback to a plain connection. If the plain attempt also fails, the host is reported as not found.
 

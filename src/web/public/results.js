@@ -1,10 +1,17 @@
 (function () {
   const statusPill = document.getElementById('status-pill');
   const statusDetail = document.getElementById('status-detail');
+  const elapsedTime = document.getElementById('elapsed-time');
   const errorBanner = document.getElementById('error-banner');
   const tbody = document.getElementById('results-body');
   const table = document.getElementById('results-table');
   const emptyState = document.getElementById('empty-state');
+  const targetsBanner = document.getElementById('targets-banner');
+  const targetsList = document.getElementById('targets-list');
+  const targetsAutoBadge = document.getElementById('targets-auto-badge');
+  const pauseResumeBtn = document.getElementById('pause-resume-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const restartBtn = document.getElementById('restart-btn');
 
   const authDialog = document.getElementById('auth-dialog');
   const authForm = document.getElementById('auth-form');
@@ -60,6 +67,16 @@
     return 'open';
   }
 
+  function formatElapsed(ms) {
+    if (ms == null) return '';
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const sec = totalSeconds % 60;
+    const pad = (n) => String(n).padStart(2, '0');
+    return h > 0 ? `Elapsed ${h}:${pad(m)}:${pad(sec)}` : `Elapsed ${m}:${pad(sec)}`;
+  }
+
   function formatUptime(seconds) {
     if (seconds == null) return '—';
     const d = Math.floor(seconds / 86400);
@@ -69,6 +86,27 @@
     if (h > 0) return `${h}h ${m}m`;
     if (m > 0) return `${m}m`;
     return `${seconds}s`;
+  }
+
+  function formatBytes(bytes) {
+    if (bytes == null) return '—';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+  }
+
+  function totalKeys(inv) {
+    return inv.keyspace.reduce((sum, db) => sum + db.keys, 0);
+  }
+
+  function formatClusterInfo(clusterInfo) {
+    if (!clusterInfo) return '—';
+    return `${clusterInfo.state ?? 'unknown'} (${clusterInfo.slotsAssigned}/16384)`;
   }
 
   // Built with createElement/textContent (never innerHTML) so INFO fields
@@ -99,6 +137,11 @@
     const inv = r.inventory;
     cell(inv ? inv.role : '—');
     cell(inv ? inv.mode : '—');
+    cell(inv ? formatClusterInfo(inv.clusterInfo) : '—');
+    cell(inv ? String(inv.replication.connectedReplicas.length) : '—');
+    cell(inv ? formatBytes(inv.memory.usedMemoryBytes) : '—');
+    cell(inv ? String(totalKeys(inv)) : '—');
+    cell(inv && inv.modules.length > 0 ? inv.modules.map((m) => m.name).join(', ') : '—');
     cell(inv ? inv.os : '—');
     cell(inv ? formatUptime(inv.uptimeSeconds) : '—');
     cell(`${r.latency}ms`);
@@ -115,15 +158,57 @@
     return tr;
   }
 
+  function renderTargetsBanner(state) {
+    if (!state.targets || state.targets.length === 0) {
+      targetsBanner.style.display = 'none';
+      return;
+    }
+    targetsBanner.style.display = '';
+    targetsList.innerHTML = '';
+    for (const target of state.targets) {
+      const chip = document.createElement('span');
+      chip.className = 'target-chip';
+      chip.textContent = target;
+      targetsList.appendChild(chip);
+    }
+    targetsAutoBadge.style.display = state.autoDetected ? '' : 'none';
+  }
+
+  function renderControlButtons(state) {
+    const scanning = state.status === 'scanning';
+    const paused = state.status === 'paused';
+    const canRestart = ['done', 'error', 'stopped'].includes(state.status);
+
+    pauseResumeBtn.style.display = scanning || paused ? '' : 'none';
+    pauseResumeBtn.textContent = paused ? 'Resume' : 'Pause';
+    pauseResumeBtn.disabled = false;
+
+    stopBtn.style.display = scanning || paused ? '' : 'none';
+    stopBtn.disabled = false;
+
+    restartBtn.style.display = canRestart ? '' : 'none';
+    restartBtn.disabled = false;
+  }
+
   function render(state) {
+    renderTargetsBanner(state);
+    renderControlButtons(state);
     statusPill.textContent = state.status;
     statusPill.className = `status-pill ${state.status}`;
 
-    if (state.status === 'scanning') {
+    if (state.elapsedMs == null) {
+      elapsedTime.style.display = 'none';
+    } else {
+      elapsedTime.style.display = '';
+      elapsedTime.textContent = formatElapsed(state.elapsedMs);
+    }
+
+    if (state.status === 'scanning' || state.status === 'paused') {
+      const prefix = state.status === 'paused' ? 'Paused at ' : 'Scanning ';
       statusDetail.textContent =
-        `Scanning ${state.progress.scanDone}/${state.progress.scanTotal} targets · ` +
+        `${prefix}${state.progress.scanDone}/${state.progress.scanTotal} targets · ` +
         `probing ${state.progress.probeDone}/${state.progress.probeTotal} open ports`;
-    } else if (state.status === 'done') {
+    } else if (state.status === 'done' || state.status === 'stopped') {
       statusDetail.textContent = `${state.results.length} instance${state.results.length === 1 ? '' : 's'} found`;
     } else {
       statusDetail.textContent = '';
@@ -151,8 +236,13 @@
     if (state.results.length === 0) {
       table.style.display = 'none';
       emptyState.style.display = 'block';
-      emptyState.textContent =
-        state.status === 'scanning' ? 'Scanning…' : 'No Redis instances found.';
+      if (state.status === 'scanning') {
+        emptyState.textContent = 'Scanning…';
+      } else if (state.status === 'paused') {
+        emptyState.textContent = 'Paused.';
+      } else {
+        emptyState.textContent = 'No Redis instances found.';
+      }
       return;
     }
 
@@ -169,7 +259,7 @@
       const res = await fetch('/api/results');
       const state = await res.json();
       render(state);
-      if (state.status === 'scanning') {
+      if (state.status === 'scanning' || state.status === 'paused') {
         window.__rscanPollTimer = setTimeout(fetchResults, 1000);
       }
     } catch {
@@ -230,6 +320,35 @@
       authSubmitBtn.disabled = false;
     }
   });
+
+  async function postControlAction(url, button) {
+    clearError();
+    button.disabled = true;
+    try {
+      const res = await fetch(url, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || `Request failed (HTTP ${res.status}).`);
+        button.disabled = false;
+        return;
+      }
+      await fetchResults();
+    } catch {
+      showError('Could not reach the server. Is rscan serve still running?');
+      button.disabled = false;
+    }
+  }
+
+  pauseResumeBtn.addEventListener('click', () => {
+    const action = pauseResumeBtn.textContent.trim() === 'Resume' ? 'resume' : 'pause';
+    void postControlAction(`/api/scan/${action}`, pauseResumeBtn);
+  });
+
+  stopBtn.addEventListener('click', () => void postControlAction('/api/scan/stop', stopBtn));
+
+  restartBtn.addEventListener('click', () =>
+    void postControlAction('/api/scan/restart', restartBtn),
+  );
 
   document.getElementById('refresh-btn').addEventListener('click', () => fetchResults());
 

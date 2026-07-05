@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { discover } from '../../src/inventory/discover';
+import { createScanController } from '../../src/scanner/control';
 import type { ScanConfig } from '../../src/types';
 
 const BASE_CONFIG: ScanConfig = {
@@ -57,6 +58,12 @@ describe('discover — end-to-end pipeline', () => {
     expect(r.inventory).not.toBeNull();
     expect(r.inventory!.redisVersion).toMatch(/^8\./);
     expect(r.latency).toBeGreaterThanOrEqual(0);
+    expect(r.inventory!.memory.usedMemoryBytes).toBeGreaterThan(0);
+    expect(r.inventory!.memory.maxMemoryPolicy).not.toBeNull();
+    expect(r.inventory!.replication.connectedReplicas).toEqual([]);
+    expect(Array.isArray(r.inventory!.keyspace)).toBe(true);
+    expect(Array.isArray(r.inventory!.modules)).toBe(true);
+    expect(r.inventory!.clusterInfo).toBeNull(); // standalone container, not cluster mode
   });
 
   it('Valkey result has expected shape', async () => {
@@ -100,6 +107,47 @@ describe('discover — end-to-end pipeline', () => {
     });
     expect(found).toContain(`127.0.0.1:${REDIS_8_PORT}`);
     expect(found).toContain(`127.0.0.1:${VALKEY_PORT}`);
+  });
+});
+
+describe('discover — hostname targets', () => {
+  it('resolves a hostname target and finds the same instances as its IP', async () => {
+    const results = await discover({ ...BASE_CONFIG, cidrs: ['localhost'] });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results.every((r) => r.host === '127.0.0.1')).toBe(true);
+  });
+
+  it('rejects the scan with a clear error when a hostname cannot be resolved', async () => {
+    await expect(
+      discover({ ...BASE_CONFIG, cidrs: ['this-does-not-exist.invalid'] }),
+    ).rejects.toThrow(/could not resolve hostname/i);
+  });
+});
+
+describe('discover — scan control', () => {
+  it('a pre-stopped controller finds nothing', async () => {
+    const controller = createScanController();
+    controller.stop();
+    const results = await discover(BASE_CONFIG, { controller });
+    expect(results).toEqual([]);
+  });
+
+  it('pausing holds the scan until resumed, then it completes normally', async () => {
+    const controller = createScanController();
+    controller.pause();
+
+    const promise = discover(BASE_CONFIG, { controller });
+    let settled = false;
+    void promise.then(() => {
+      settled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(settled).toBe(false);
+
+    controller.resume();
+    const results = await promise;
+    expect(results.length).toBeGreaterThanOrEqual(1);
   });
 });
 

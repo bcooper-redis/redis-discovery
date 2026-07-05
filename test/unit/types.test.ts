@@ -36,6 +36,16 @@ describe('DiscoveryResult', () => {
         os: 'Linux 5.15.0 x86_64',
         uptimeSeconds: 86400,
         role: 'master',
+        replication: {
+          connectedReplicas: [],
+          masterHost: null,
+          masterPort: null,
+          masterLinkStatus: null,
+        },
+        memory: { usedMemoryBytes: null, maxMemoryBytes: null, maxMemoryPolicy: null },
+        keyspace: [],
+        modules: [],
+        clusterInfo: null,
       },
     };
     expect(result.inventory?.mode).toBe('standalone');

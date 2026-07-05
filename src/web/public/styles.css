@@ -209,6 +209,49 @@ button:disabled {
   display: block;
 }
 
+.targets-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 1.1rem;
+  margin-bottom: 1.25rem;
+}
+
+.targets-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.targets-list {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.target-chip {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 5px;
+  font-size: 0.83rem;
+  font-family: monospace;
+  background: var(--muted-bg);
+  color: var(--text);
+}
+
+.badge.auto-detected {
+  background: var(--muted-bg);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .status-banner {
   display: flex;
   align-items: center;
@@ -216,6 +259,10 @@ button:disabled {
   margin-bottom: 1.25rem;
   font-size: 0.9rem;
   color: var(--text-muted);
+}
+
+.elapsed-time {
+  font-family: monospace;
 }
 
 .status-pill {

@@ -25,6 +25,11 @@ function buildInventory(probe: ProbeResult): Inventory | null {
     os: probe.os ?? '',
     uptimeSeconds: probe.uptimeSeconds ?? 0,
     role: toRole(probe.role),
+    replication: probe.replication,
+    memory: probe.memory,
+    keyspace: probe.keyspace,
+    modules: probe.modules,
+    clusterInfo: probe.clusterInfo,
   };
 }
 

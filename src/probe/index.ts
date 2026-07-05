@@ -1,9 +1,9 @@
 import Redis from 'ioredis';
-import { parseInfoServer } from './info';
+import { parseInfo, parseModuleList, parseClusterInfo, refineProductWithModules } from './info';
 import type { ParsedInfo } from './info';
-import type { AuthCredentials } from '../types';
+import type { AuthCredentials, ModuleInfo, ClusterInfo } from '../types';
 
-export { parseInfoServer };
+export { parseInfo };
 export type { ParsedInfo };
 
 export interface ProbeOptions {
@@ -27,6 +27,11 @@ export interface ProbeResult {
   os: string | null;
   uptimeSeconds: number | null;
   role: ParsedInfo['role'];
+  replication: ParsedInfo['replication'];
+  memory: ParsedInfo['memory'];
+  keyspace: ParsedInfo['keyspace'];
+  modules: ModuleInfo[];
+  clusterInfo: ClusterInfo | null;
   rawInfo: string | null;
 }
 
@@ -37,6 +42,16 @@ const UNKNOWN_INFO: Omit<ProbeResult, 'isRedis' | 'authRequired' | 'wrongPasswor
   os: null,
   uptimeSeconds: null,
   role: null,
+  replication: {
+    connectedReplicas: [],
+    masterHost: null,
+    masterPort: null,
+    masterLinkStatus: null,
+  },
+  memory: { usedMemoryBytes: null, maxMemoryBytes: null, maxMemoryPolicy: null },
+  keyspace: [],
+  modules: [],
+  clusterInfo: null,
   rawInfo: null,
 };
 
@@ -121,7 +136,31 @@ async function attemptProbe(
 
     try {
       const rawInfo = await redis.info();
-      const parsed = parseInfoServer(rawInfo);
+      const parsed = parseInfo(rawInfo);
+
+      // MODULE LIST and CLUSTER INFO are separate round-trips beyond the base
+      // INFO call. Neither failing should sink the whole probe — a restricted
+      // ACL or an older Redis build may not support one or the other.
+      let modules: ModuleInfo[] = [];
+      try {
+        modules = parseModuleList(await redis.call('MODULE', 'LIST'));
+      } catch {
+        // leave empty
+      }
+
+      let clusterInfo: ClusterInfo | null = null;
+      if (parsed.mode === 'cluster') {
+        try {
+          clusterInfo = parseClusterInfo((await redis.call('CLUSTER', 'INFO')) as string);
+        } catch {
+          // leave null — some deployments (e.g. Redis Enterprise) reject
+          // CLUSTER INFO outright even in cluster mode; the rest of the
+          // probe result is still valid.
+        }
+      }
+
+      const product = refineProductWithModules(parsed.product, modules);
+
       return {
         isRedis: true,
         authRequired: false,
@@ -129,6 +168,9 @@ async function attemptProbe(
         tls: useTls,
         rawInfo,
         ...parsed,
+        product,
+        modules,
+        clusterInfo,
       };
     } catch {
       return {

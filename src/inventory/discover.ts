@@ -1,6 +1,8 @@
-import { expandCidr, assertScanSize } from '../scanner/cidr';
+import { assertScanSize } from '../scanner/cidr';
+import { resolveHosts } from '../scanner/hostname';
 import { buildTargets, scanTargets } from '../scanner/scan';
 import { createLimiter } from '../scanner/concurrency';
+import type { ScanController } from '../scanner/control';
 import { probeHost } from '../probe/index';
 import type { ProbeOptions } from '../probe/index';
 import { assembleResult } from './assemble';
@@ -14,24 +16,30 @@ export interface DiscoverOptions {
   onProbeProgress?: (done: number, total: number) => void;
   /** Fired each time a Redis instance is confirmed. */
   onResult?: (result: DiscoveryResult) => void;
+  /** When provided, lets a caller pause/resume/stop the scan while it's running. */
+  controller?: ScanController;
 }
 
 /**
- * Run the full discovery pipeline: expand CIDRs → TCP scan → Redis probe →
- * assemble DiscoveryResults. Returns only hosts that responded as Redis.
- * Results are sorted by host then port for deterministic output.
+ * Run the full discovery pipeline: resolve targets (CIDRs, bare IPs, and
+ * hostnames) → TCP scan → Redis probe → assemble DiscoveryResults. Returns
+ * only hosts that responded as Redis. Results are sorted by host then port
+ * for deterministic output.
  */
 export async function discover(
   config: ScanConfig,
   options: DiscoverOptions = {},
 ): Promise<DiscoveryResult[]> {
   assertScanSize(config.cidrs);
-  const hosts = config.cidrs.flatMap((cidr) => expandCidr(cidr));
+  const hosts = await resolveHosts(config.cidrs, config.timeoutMs);
   const targets = buildTargets(hosts, config.ports);
+
+  const controller = options.controller;
 
   const tcpResults = await scanTargets(targets, {
     timeoutMs: config.timeoutMs,
     concurrency: config.concurrency,
+    controller,
     onProgress: options.onScanProgress
       ? (_, done, total) => options.onScanProgress!(done, total)
       : undefined,
@@ -55,6 +63,12 @@ export async function discover(
   await Promise.all(
     openPorts.map((tcp) =>
       limit(async () => {
+        await controller?.waitUntilRunnable();
+        if (controller?.isStopped()) {
+          options.onProbeProgress?.(++probeDone, probeTotal);
+          return;
+        }
+
         // probeHost is documented to always resolve, but a single bad target
         // throwing here would otherwise collapse Promise.all and drop every
         // already-accumulated result in `results`. Contain failures per-target.

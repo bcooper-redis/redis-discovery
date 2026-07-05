@@ -1,6 +1,7 @@
 import { spawnSync, spawn, execSync } from 'child_process';
 import * as path from 'path';
 import { describe, it, expect, beforeAll } from 'vitest';
+import type { ScanState } from '../../src/web/state';
 
 const ROOT = path.resolve(__dirname, '../..');
 const CLI = path.join(ROOT, 'dist/cli/index.js');
@@ -66,6 +67,13 @@ describe('rscan CLI', () => {
       const { stdout, status } = rscan('scan', '-c', '127.0.0.1/32', '-p', VALKEY_PORT);
       expect(status).toBe(0);
       expect(stdout).toContain('valkey');
+    });
+
+    it('accepts a hostname target and resolves it before scanning', () => {
+      const { stdout, status } = rscan('scan', '-c', 'localhost', '-p', REDIS_8_PORT);
+      expect(status).toBe(0);
+      expect(stdout).toContain('redis');
+      expect(stdout).toContain('127.0.0.1');
     });
 
     it('outputs "No Redis instances found." when port is closed', () => {
@@ -160,7 +168,7 @@ describe('rscan CLI', () => {
         await waitForServer(`http://127.0.0.1:${port}/api/results`, 5000);
         const res = await fetch(`http://127.0.0.1:${port}/api/results`);
         expect(res.status).toBe(200);
-        const body = await res.json();
+        const body = (await res.json()) as ScanState;
         expect(body.status).toBe('idle');
 
         // Confirms the built dist/ output includes the copied static UI

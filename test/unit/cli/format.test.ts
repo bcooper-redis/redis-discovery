@@ -18,6 +18,16 @@ const OPEN: DiscoveryResult = {
     os: 'Linux',
     uptimeSeconds: 3600,
     role: 'master',
+    replication: {
+      connectedReplicas: [],
+      masterHost: null,
+      masterPort: null,
+      masterLinkStatus: null,
+    },
+    memory: { usedMemoryBytes: null, maxMemoryBytes: null, maxMemoryPolicy: null },
+    keyspace: [],
+    modules: [],
+    clusterInfo: null,
   },
 };
 

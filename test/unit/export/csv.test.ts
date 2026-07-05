@@ -18,6 +18,16 @@ const OPEN: DiscoveryResult = {
     os: 'Linux x86_64',
     uptimeSeconds: 3600,
     role: 'master',
+    replication: {
+      connectedReplicas: [{ ip: '10.0.0.2', port: 6379, state: 'online', offset: 14, lag: 0 }],
+      masterHost: null,
+      masterPort: null,
+      masterLinkStatus: null,
+    },
+    memory: { usedMemoryBytes: 1048576, maxMemoryBytes: null, maxMemoryPolicy: 'noeviction' },
+    keyspace: [{ db: 0, keys: 5, expires: 1, avgTtlMs: 0 }],
+    modules: [{ name: 'search', version: 20811, path: '/usr/lib/redis/modules/redisearch.so' }],
+    clusterInfo: null,
   },
 };
 
@@ -38,6 +48,12 @@ describe('toCsv', () => {
     expect(lines[0]).toContain('Port');
     expect(lines[0]).toContain('Product');
     expect(lines[0]).toContain('Version');
+    expect(lines[0]).toContain('Used Memory (bytes)');
+    expect(lines[0]).toContain('Max Memory Policy');
+    expect(lines[0]).toContain('Connected Replicas');
+    expect(lines[0]).toContain('Total Keys');
+    expect(lines[0]).toContain('Modules');
+    expect(lines[0]).toContain('Cluster State');
   });
 
   it('includes a data row for each result', () => {
@@ -61,6 +77,20 @@ describe('toCsv', () => {
     const dataRow = csv.split('\r\n')[1];
     // version, role, mode, os, uptime should be empty
     expect(dataRow).toContain(',,');
+  });
+
+  it('populates memory, replicas, keys, modules, and cluster state', () => {
+    const csv = toCsv([OPEN]);
+    expect(csv).toContain('1048576');
+    expect(csv).toContain('noeviction');
+    expect(csv).toContain('search');
+  });
+
+  it('leaves the new inventory-derived columns empty when inventory is null', () => {
+    const csv = toCsv([AUTH_REQUIRED]);
+    expect(csv).not.toContain('1048576');
+    expect(csv).not.toContain('noeviction');
+    expect(csv).not.toContain('search');
   });
 
   it('quotes values containing commas', () => {

@@ -71,6 +71,15 @@ describe('assertScanSize', () => {
   it('throws when combined CIDRs exceed the limit even though each is individually small', () => {
     expect(() => assertScanSize(['10.0.0.0/16', '10.1.0.0/16'])).toThrow(/scan target too large/i);
   });
+
+  it('counts a bare IP or hostname as a single host, without throwing on its format', () => {
+    expect(() => assertScanSize(['10.0.0.5', 'redis.example.com'])).not.toThrow();
+  });
+
+  it('counts bare IPs/hostnames alongside CIDRs toward the same limit', () => {
+    const manyHosts = Array.from({ length: 10 }, (_, i) => `10.0.0.${i}`);
+    expect(() => assertScanSize(['10.0.0.0/16', ...manyHosts])).toThrow(/scan target too large/i);
+  });
 });
 
 describe('detectLocalCidrs', () => {

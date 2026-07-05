@@ -1,5 +1,6 @@
 import { tcpProbe, TcpProbeResult } from './tcp';
 import { createLimiter } from './concurrency';
+import type { ScanController } from './control';
 
 export { TcpProbeResult };
 
@@ -12,6 +13,8 @@ export interface ScanOptions {
   timeoutMs?: number;
   concurrency?: number;
   onProgress?: (result: TcpProbeResult, done: number, total: number) => void;
+  /** When provided, each not-yet-started target waits on pause and skips entirely on stop. */
+  controller?: ScanController;
 }
 
 const DEFAULT_TIMEOUT_MS = 1000;
@@ -40,11 +43,15 @@ export async function scanTargets(
 
   let done = 0;
   const total = targets.length;
+  const controller = options.controller;
 
   return Promise.all(
     targets.map((target) =>
       limit(async () => {
-        const result = await tcpProbe(target.host, target.port, timeoutMs);
+        await controller?.waitUntilRunnable();
+        const result = controller?.isStopped()
+          ? { host: target.host, port: target.port, open: false, latencyMs: 0 }
+          : await tcpProbe(target.host, target.port, timeoutMs);
         options.onProgress?.(result, ++done, total);
         return result;
       }),

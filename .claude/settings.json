@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_screenshot",
+      "Bash(npm test *)",
+      "Bash(npm run typecheck)",
+      "Bash(cargo check)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "mcp__Claude_Preview__preview_console_logs",
+      "Bash(source ~/.zshrc)",
+      "mcp__Claude_Preview__preview_network",
+      "Bash(npm run lint)",
+      "Bash(source ~/.cargo/env)",
+      "Bash(npm run test:integration)",
+      "mcp__Claude_Preview__preview_snapshot",
+      "Bash(source \"$HOME/.cargo/env\")",
+      "Bash(npm audit)",
+      "Bash(npm view *)",
+      "mcp__Claude_Preview__preview_inspect",
+      "mcp__544dd990-9708-4c10-b3d5-ab917cd37faa__read_file_content"
+    ]
+  }
+}

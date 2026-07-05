@@ -24,10 +24,26 @@
         hosts.
       </p>
 
+      <div id="targets-banner" class="targets-banner" style="display: none">
+        <span class="targets-label">Target</span>
+        <span id="targets-list" class="targets-list"></span>
+        <span id="targets-auto-badge" class="badge auto-detected" style="display: none"
+          >auto-detected</span
+        >
+      </div>
+
       <div class="status-banner">
         <span id="status-pill" class="status-pill idle">idle</span>
         <span id="status-detail"></span>
+        <span id="elapsed-time" class="elapsed-time" style="display: none"></span>
         <span class="actions" style="margin-left: auto">
+          <button type="button" id="pause-resume-btn" class="secondary" style="display: none">
+            Pause
+          </button>
+          <button type="button" id="stop-btn" class="secondary" style="display: none">Stop</button>
+          <button type="button" id="restart-btn" class="secondary" style="display: none">
+            Restart
+          </button>
           <button type="button" id="refresh-btn" class="secondary">Refresh</button>
           <a href="/api/export/csv" class="btn secondary" download>Export CSV</a>
         </span>
@@ -47,6 +63,11 @@
               <th>Auth</th>
               <th>Role</th>
               <th>Mode</th>
+              <th>Cluster</th>
+              <th>Replicas</th>
+              <th>Memory</th>
+              <th>Keys</th>
+              <th>Modules</th>
               <th>OS</th>
               <th>Uptime</th>
               <th>Latency</th>

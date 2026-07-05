@@ -24,8 +24,20 @@ function bulkString(s: string): string {
   return `$${Buffer.byteLength(s)}\r\n${s}\r\n`;
 }
 
+/** Encode a JS value (string, number, or nested array) as a RESP2 reply. */
+function respEncode(value: string | number | unknown[]): string {
+  if (typeof value === 'number') return `:${value}\r\n`;
+  if (typeof value === 'string') return bulkString(value);
+  return (
+    `*${value.length}\r\n` + value.map((v) => respEncode(v as string | number | unknown[])).join('')
+  );
+}
+
+/** An empty RESP array — the reply for MODULE LIST when no modules are loaded. */
+const EMPTY_ARRAY = '*0\r\n';
+
 const MINIMAL_INFO =
-  '# Server\r\nredis_version:8.0.0\r\nserver_name:redis\r\nredis_mode:standalone\r\nos:Test\r\nuptime_in_seconds:100\r\n# Replication\r\nrole:master\r\n';
+  '# Server\r\nredis_version:8.0.0\r\nserver_name:redis\r\nredis_mode:standalone\r\nos:Test\r\nuptime_in_seconds:100\r\n# Replication\r\nrole:master\r\n# Memory\r\nused_memory:1048576\r\nmaxmemory:0\r\nmaxmemory_policy:noeviction\r\n# Keyspace\r\ndb0:keys=3,expires=0,avg_ttl=0\r\n';
 
 /**
  * Parse all RESP commands from a raw buffer. Handles TCP coalescing (multiple
@@ -88,6 +100,8 @@ function authRequiredHandler(socket: net.Socket | tls.TLSSocket): void {
         } else {
           socket.write('-NOAUTH Authentication required\r\n');
         }
+      } else if (cmd === 'module') {
+        socket.write(authenticated ? EMPTY_ARRAY : '-NOAUTH Authentication required\r\n');
       }
     }
   });
@@ -106,6 +120,8 @@ function openRedisHandler(socket: net.Socket | tls.TLSSocket): void {
         socket.write('+PONG\r\n');
       } else if (cmd === 'info') {
         socket.write(bulkString(MINIMAL_INFO));
+      } else if (cmd === 'module') {
+        socket.write(EMPTY_ARRAY);
       }
     }
   });
@@ -132,6 +148,8 @@ function nopermPingHandler(socket: net.Socket | tls.TLSSocket): void {
         socket.write("-NOPERM User default has no permissions to run the 'ping' command\r\n");
       } else if (cmd === 'info') {
         socket.write(bulkString(MINIMAL_INFO));
+      } else if (cmd === 'module') {
+        socket.write(EMPTY_ARRAY);
       }
     }
   });
@@ -216,6 +234,158 @@ describe('probeHost — plain open Redis', () => {
     expect(result.tls).toBe(false);
     expect(result.version).toBe('8.0.0');
     expect(result.role).toBe('master');
+  });
+
+  it('also fetches memory, keyspace, and an empty module list', async () => {
+    const mock = await startPlainServer(openRedisHandler);
+    const result = await probeHost('127.0.0.1', mock.port, 1000);
+    await mock.close();
+    expect(result.memory.usedMemoryBytes).toBe(1048576);
+    expect(result.memory.maxMemoryPolicy).toBe('noeviction');
+    expect(result.keyspace).toEqual([{ db: 0, keys: 3, expires: 0, avgTtlMs: 0 }]);
+    expect(result.modules).toEqual([]);
+    expect(result.clusterInfo).toBeNull();
+  });
+});
+
+describe('probeHost — modules', () => {
+  it('parses a non-empty MODULE LIST reply, including the real name/ver/path/args shape', async () => {
+    const mock = await startPlainServer((socket) => {
+      socket.on('data', (data) => {
+        for (const cmd of parseAllCommands(data)) {
+          if (cmd === 'client') socket.write('+OK\r\n');
+          else if (cmd === 'ping') socket.write('+PONG\r\n');
+          else if (cmd === 'info') socket.write(bulkString(MINIMAL_INFO));
+          else if (cmd === 'module') {
+            socket.write(
+              respEncode([
+                [
+                  'name',
+                  'search',
+                  'ver',
+                  20811,
+                  'path',
+                  '/usr/lib/redis/modules/redisearch.so',
+                  'args',
+                  [],
+                ],
+                [
+                  'name',
+                  'ReJSON',
+                  'ver',
+                  20609,
+                  'path',
+                  '/usr/lib/redis/modules/rejson.so',
+                  'args',
+                  [],
+                ],
+              ]),
+            );
+          }
+        }
+      });
+    });
+    const result = await probeHost('127.0.0.1', mock.port, 1000);
+    await mock.close();
+    expect(result.modules).toEqual([
+      { name: 'search', version: 20811, path: '/usr/lib/redis/modules/redisearch.so' },
+      { name: 'ReJSON', version: 20609, path: '/usr/lib/redis/modules/rejson.so' },
+    ]);
+    expect(result.product).toBe('redis');
+  });
+
+  it("classifies as 'enterprise' when a module reports the enterprise-managed path, even though maxmemory is present", async () => {
+    // Verbatim structure from a live Redis Cloud instance. server_name is
+    // absent (as on any pre-7.4-style INFO) but maxmemory IS present here —
+    // a case the maxmemory-absence heuristic alone would miss — so this
+    // specifically proves the module-path signal catches what the other one
+    // doesn't.
+    const info =
+      '# Server\r\nredis_version:8.6.2\r\nredis_mode:standalone\r\nrole:master\r\n# Memory\r\nused_memory:2484368\r\nmaxmemory:0\r\nmaxmemory_policy:volatile-lru\r\n';
+    const mock = await startPlainServer((socket) => {
+      socket.on('data', (data) => {
+        for (const cmd of parseAllCommands(data)) {
+          if (cmd === 'client') socket.write('+OK\r\n');
+          else if (cmd === 'ping') socket.write('+PONG\r\n');
+          else if (cmd === 'info') socket.write(bulkString(info));
+          else if (cmd === 'module') {
+            socket.write(
+              respEncode([
+                ['name', 'search', 'ver', 80606, 'path', '/enterprise-managed', 'args', []],
+              ]),
+            );
+          }
+        }
+      });
+    });
+    const result = await probeHost('127.0.0.1', mock.port, 1000);
+    await mock.close();
+    expect(result.product).toBe('enterprise');
+  });
+});
+
+describe('probeHost — cluster mode', () => {
+  it('fetches CLUSTER INFO when redis_mode is cluster', async () => {
+    const clusterInfoText =
+      'cluster_enabled:1\r\ncluster_state:ok\r\ncluster_slots_assigned:16384\r\ncluster_known_nodes:6\r\ncluster_size:3\r\n';
+    const mock = await startPlainServer((socket) => {
+      socket.on('data', (data) => {
+        for (const cmd of parseAllCommands(data)) {
+          if (cmd === 'client') socket.write('+OK\r\n');
+          else if (cmd === 'ping') socket.write('+PONG\r\n');
+          else if (cmd === 'info') {
+            socket.write(
+              bulkString('redis_version:7.2.0\r\nredis_mode:cluster\r\nrole:master\r\n'),
+            );
+          } else if (cmd === 'module') socket.write(EMPTY_ARRAY);
+          else if (cmd === 'cluster') socket.write(bulkString(clusterInfoText));
+        }
+      });
+    });
+    const result = await probeHost('127.0.0.1', mock.port, 1000);
+    await mock.close();
+    expect(result.mode).toBe('cluster');
+    expect(result.clusterInfo).toEqual({
+      enabled: true,
+      state: 'ok',
+      slotsAssigned: 16384,
+      knownNodes: 6,
+      size: 3,
+    });
+  });
+
+  it('does not attempt CLUSTER INFO in standalone mode', async () => {
+    const mock = await startPlainServer(openRedisHandler);
+    const result = await probeHost('127.0.0.1', mock.port, 1000);
+    await mock.close();
+    expect(result.mode).toBe('standalone');
+    expect(result.clusterInfo).toBeNull();
+  });
+
+  it('resolves with clusterInfo:null (not a failed probe) when CLUSTER INFO is rejected', async () => {
+    // Observed on a live Redis Cloud instance: CLUSTER INFO returns an error
+    // even though redis_mode reports cluster. The rest of the probe must
+    // still succeed.
+    const mock = await startPlainServer((socket) => {
+      socket.on('data', (data) => {
+        for (const cmd of parseAllCommands(data)) {
+          if (cmd === 'client') socket.write('+OK\r\n');
+          else if (cmd === 'ping') socket.write('+PONG\r\n');
+          else if (cmd === 'info') {
+            socket.write(
+              bulkString('redis_version:8.6.2\r\nredis_mode:cluster\r\nrole:master\r\n'),
+            );
+          } else if (cmd === 'module') socket.write(EMPTY_ARRAY);
+          else if (cmd === 'cluster')
+            socket.write('-ERR This instance has cluster support disabled\r\n');
+        }
+      });
+    });
+    const result = await probeHost('127.0.0.1', mock.port, 1000);
+    await mock.close();
+    expect(result.isRedis).toBe(true);
+    expect(result.mode).toBe('cluster');
+    expect(result.clusterInfo).toBeNull();
   });
 });
 
