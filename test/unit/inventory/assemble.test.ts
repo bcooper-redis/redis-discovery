@@ -13,11 +13,22 @@ const NO_REPLICATION = {
 };
 const NO_MEMORY = { usedMemoryBytes: null, maxMemoryBytes: null, maxMemoryPolicy: null };
 
+const SELF_SIGNED_CERT = {
+  subject: 'redis.example.com',
+  issuer: 'redis.example.com',
+  validFrom: 'Jan 1 00:00:00 2026 GMT',
+  validTo: 'Jan 1 00:00:00 2027 GMT',
+  selfSigned: true,
+  trusted: false,
+  fingerprint256: 'AA:BB:CC',
+};
+
 const OPEN_PROBE: ProbeResult = {
   isRedis: true,
   authRequired: false,
   wrongPassword: false,
   tls: false,
+  tlsCertificate: SELF_SIGNED_CERT,
   product: 'redis',
   version: '8.0.0',
   mode: 'standalone',
@@ -34,6 +45,7 @@ const OPEN_PROBE: ProbeResult = {
   keyspace: [{ db: 0, keys: 5, expires: 1, avgTtlMs: 0 }],
   modules: [{ name: 'search', version: 20811, path: '/usr/lib/redis/modules/redisearch.so' }],
   clusterInfo: null,
+  runId: 'a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d4f1',
   rawInfo: '# Server\nredis_version:8.0.0\n',
 };
 
@@ -41,7 +53,8 @@ const AUTH_PROBE: ProbeResult = {
   isRedis: true,
   authRequired: true,
   wrongPassword: false,
-  tls: false,
+  tls: true,
+  tlsCertificate: SELF_SIGNED_CERT,
   product: 'unknown',
   version: null,
   mode: null,
@@ -53,6 +66,7 @@ const AUTH_PROBE: ProbeResult = {
   keyspace: [],
   modules: [],
   clusterInfo: null,
+  runId: null,
   rawInfo: null,
 };
 
@@ -63,6 +77,7 @@ const NOT_REDIS_PROBE: ProbeResult = {
   authRequired: false,
   wrongPassword: false,
   tls: false,
+  tlsCertificate: null,
   product: 'unknown',
   version: null,
   mode: null,
@@ -74,6 +89,7 @@ const NOT_REDIS_PROBE: ProbeResult = {
   keyspace: [],
   modules: [],
   clusterInfo: null,
+  runId: null,
   rawInfo: null,
 };
 
@@ -163,13 +179,14 @@ describe('assembleResult — inventory', () => {
     expect(inventory!.role).toBe('master');
   });
 
-  it('passes through replication, memory, keyspace, modules, and clusterInfo unchanged', () => {
+  it('passes through replication, memory, keyspace, modules, clusterInfo, and runId unchanged', () => {
     const { inventory } = assembleResult(BASE_TCP, OPEN_PROBE, false);
     expect(inventory!.replication).toBe(OPEN_PROBE.replication);
     expect(inventory!.memory).toBe(OPEN_PROBE.memory);
     expect(inventory!.keyspace).toBe(OPEN_PROBE.keyspace);
     expect(inventory!.modules).toBe(OPEN_PROBE.modules);
     expect(inventory!.clusterInfo).toBe(OPEN_PROBE.clusterInfo);
+    expect(inventory!.runId).toBe(OPEN_PROBE.runId);
   });
 
   it('inventory is null when authRequired', () => {
@@ -178,6 +195,16 @@ describe('assembleResult — inventory', () => {
 
   it('inventory is null when not Redis', () => {
     expect(assembleResult(BASE_TCP, NOT_REDIS_PROBE, false).inventory).toBeNull();
+  });
+
+  it('tlsCertificate survives even when inventory is null due to authRequired — the whole point of the field', () => {
+    const r = assembleResult(BASE_TCP, AUTH_PROBE, false);
+    expect(r.inventory).toBeNull();
+    expect(r.tlsCertificate).toBe(SELF_SIGNED_CERT);
+  });
+
+  it('tlsCertificate is null when not Redis at all', () => {
+    expect(assembleResult(BASE_TCP, NOT_REDIS_PROBE, false).tlsCertificate).toBeNull();
   });
 
   it('inventory is null when version is null (partial parse)', () => {

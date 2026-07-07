@@ -9,6 +9,7 @@
   const targetsBanner = document.getElementById('targets-banner');
   const targetsList = document.getElementById('targets-list');
   const targetsAutoBadge = document.getElementById('targets-auto-badge');
+  const duplicateBanner = document.getElementById('duplicate-banner');
   const pauseResumeBtn = document.getElementById('pause-resume-btn');
   const stopBtn = document.getElementById('stop-btn');
   const restartBtn = document.getElementById('restart-btn');
@@ -49,6 +50,45 @@
   // Mirrors src/types/index.ts's productDisplay so the web UI and CLI agree.
   function productDisplay(product) {
     return product === 'redis' ? 'redis OSS' : product;
+  }
+
+  // Mirrors src/types/index.ts's findRunIdDuplicates so the web UI and CLI
+  // agree on what counts as "the same database reachable through more than
+  // one endpoint" (e.g. Redis Enterprise's proxy answering on every node).
+  function findRunIdDuplicates(results) {
+    const byRunId = new Map();
+    for (const r of results) {
+      const runId = r.inventory && r.inventory.runId;
+      if (!runId) continue;
+      const group = byRunId.get(runId);
+      if (group) group.push(r);
+      else byRunId.set(runId, [r]);
+    }
+    return Array.from(byRunId.values()).filter((group) => group.length > 1);
+  }
+
+  // Maps "host:port" -> the OTHER host:port strings sharing its run_id, for
+  // every result that's part of a duplicate group.
+  function buildDuplicateEndpoints(duplicateGroups) {
+    const map = new Map();
+    for (const group of duplicateGroups) {
+      for (const r of group) {
+        const others = group.filter((g) => g !== r).map((g) => `${g.host}:${g.port}`);
+        map.set(`${r.host}:${r.port}`, others);
+      }
+    }
+    return map;
+  }
+
+  function shortRunId(runId) {
+    if (!runId) return '—';
+    return runId.length > 12 ? `${runId.slice(0, 12)}…` : runId;
+  }
+
+  function formatReplicatingFrom(replication) {
+    if (!replication || !replication.masterHost) return '—';
+    const status = replication.masterLinkStatus ? ` (${replication.masterLinkStatus})` : '';
+    return `${replication.masterHost}:${replication.masterPort}${status}`;
   }
 
   // Mirrors src/cli/format.ts's authDisplay so the web UI and CLI agree.
@@ -114,10 +154,18 @@
     return `${clusterInfo.state ?? 'unknown'} (${clusterInfo.slotsAssigned}/16384)`;
   }
 
+  // Read from the TLS handshake itself, so this is populated even when auth
+  // is required and the rest of the row's inventory cells are all "—".
+  function certBadgeInfo(cert) {
+    if (cert.trusted) return { text: 'CA-issued', className: 'trusted' };
+    if (cert.selfSigned) return { text: 'self-signed', className: 'self-signed' };
+    return { text: 'untrusted', className: 'self-signed' };
+  }
+
   // Built with createElement/textContent (never innerHTML) so INFO fields
   // like version/os — which come verbatim from the scanned host and are not
   // trustworthy — can never be interpreted as markup.
-  function renderRow(r) {
+  function renderRow(r, duplicateEndpoints) {
     const tr = document.createElement('tr');
 
     function cell(text) {
@@ -128,9 +176,9 @@
 
     cell(r.host);
     cell(String(r.port));
-    cell(r.tls ? 'yes' : 'no');
     cell(productDisplay(r.product));
     cell(r.version ?? '—');
+    cell(r.tls ? 'yes' : 'no');
 
     const authTd = document.createElement('td');
     const badge = document.createElement('span');
@@ -144,12 +192,47 @@
     cell(inv ? inv.mode : '—');
     cell(inv ? formatClusterInfo(inv.clusterInfo) : '—');
     cell(inv ? String(inv.replication.connectedReplicas.length) : '—');
+    cell(inv ? formatReplicatingFrom(inv.replication) : '—');
     cell(inv ? formatBytes(inv.memory.usedMemoryBytes) : '—');
     cell(inv ? String(totalKeys(inv)) : '—');
     cell(inv && inv.modules.length > 0 ? inv.modules.map((m) => m.name).join(', ') : '—');
     cell(inv ? inv.os : '—');
     cell(inv ? formatUptime(inv.uptimeSeconds) : '—');
     cell(`${r.latency}ms`);
+
+    const runIdTd = document.createElement('td');
+    const runIdSpan = document.createElement('span');
+    runIdSpan.className = 'run-id';
+    runIdSpan.textContent = shortRunId(inv ? inv.runId : null);
+    runIdTd.appendChild(runIdSpan);
+    const others = duplicateEndpoints.get(`${r.host}:${r.port}`);
+    if (others && others.length > 0) {
+      const dupBadge = document.createElement('span');
+      dupBadge.className = 'badge duplicate';
+      dupBadge.textContent = '⚠ dup';
+      dupBadge.title = `Same Run ID also seen at ${others.join(', ')} — likely the same database`;
+      runIdTd.appendChild(document.createTextNode(' '));
+      runIdTd.appendChild(dupBadge);
+    }
+    tr.appendChild(runIdTd);
+
+    const certTd = document.createElement('td');
+    if (r.tlsCertificate) {
+      const subjectSpan = document.createElement('span');
+      subjectSpan.textContent = r.tlsCertificate.subject ?? '(no subject)';
+      certTd.appendChild(subjectSpan);
+      const info = certBadgeInfo(r.tlsCertificate);
+      const certBadge = document.createElement('span');
+      certBadge.className = `badge ${info.className}`;
+      certBadge.textContent = info.text;
+      certTd.appendChild(document.createTextNode(' '));
+      certTd.appendChild(certBadge);
+    } else {
+      certTd.textContent = '—';
+    }
+    tr.appendChild(certTd);
+
+    cell(r.tlsCertificate?.validTo ?? '—');
 
     const actionTd = document.createElement('td');
     const authBtn = document.createElement('button');
@@ -179,6 +262,26 @@
     targetsAutoBadge.style.display = state.autoDetected ? '' : 'none';
   }
 
+  function renderDuplicateBanner(duplicateGroups) {
+    duplicateBanner.innerHTML = '';
+    if (duplicateGroups.length === 0) {
+      duplicateBanner.style.display = 'none';
+      return;
+    }
+    duplicateBanner.style.display = 'block';
+
+    const strong = document.createElement('strong');
+    const groupWord = duplicateGroups.length === 1 ? 'group' : 'groups';
+    strong.textContent = `⚠ ${duplicateGroups.length} ${groupWord} of results share the same Run ID. `;
+    duplicateBanner.appendChild(strong);
+
+    const note = document.createElement('span');
+    note.textContent =
+      'That means the same database is reachable through more than one endpoint ' +
+      '(common with Redis Enterprise’s proxy layer) — see the Run ID column below.';
+    duplicateBanner.appendChild(note);
+  }
+
   function renderControlButtons(state) {
     const scanning = state.status === 'scanning';
     const paused = state.status === 'paused';
@@ -198,6 +301,8 @@
   function render(state) {
     renderTargetsBanner(state);
     renderControlButtons(state);
+    const duplicateGroups = findRunIdDuplicates(state.results);
+    renderDuplicateBanner(duplicateGroups);
     statusPill.textContent = state.status;
     statusPill.className = `status-pill ${state.status}`;
 
@@ -253,8 +358,9 @@
 
     table.style.display = '';
     emptyState.style.display = 'none';
+    const duplicateEndpoints = buildDuplicateEndpoints(duplicateGroups);
     for (const r of state.results) {
-      tbody.appendChild(renderRow(r));
+      tbody.appendChild(renderRow(r, duplicateEndpoints));
     }
   }
 

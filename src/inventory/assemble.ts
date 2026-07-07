@@ -30,6 +30,7 @@ function buildInventory(probe: ProbeResult): Inventory | null {
     keyspace: probe.keyspace,
     modules: probe.modules,
     clusterInfo: probe.clusterInfo,
+    runId: probe.runId,
   };
 }
 
@@ -68,5 +69,6 @@ export function assembleResult(
     authenticatedStatus: deriveAuthenticatedStatus(probe, credentialsProvided),
     latency: tcp.latencyMs,
     inventory: buildInventory(probe),
+    tlsCertificate: probe.tlsCertificate,
   };
 }

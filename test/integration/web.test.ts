@@ -73,7 +73,9 @@ const FIXTURE: DiscoveryResult = {
     keyspace: [],
     modules: [],
     clusterInfo: null,
+    runId: null,
   },
+  tlsCertificate: null,
 };
 
 // Each test gets its own isolated state — prevents background scans from one

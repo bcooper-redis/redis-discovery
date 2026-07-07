@@ -112,6 +112,13 @@ slave0:ip=127.0.0.1,port=6380,state=online,offset=14,lag=0
 slave1:ip=127.0.0.1,port=6381,state=online,offset=14,lag=1
 `.trim();
 
+const WITH_RUN_ID = `
+# Server
+redis_version:8.2.2
+run_id:a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d4f1
+role:master
+`.trim();
+
 const WITH_MEMORY = `
 # Memory
 used_memory:1035520
@@ -282,6 +289,16 @@ describe('parseInfo — replication', () => {
     expect(replication.masterPort).toBe(6379);
     expect(replication.masterLinkStatus).toBe('up');
     expect(replication.connectedReplicas).toEqual([]);
+  });
+});
+
+describe('parseInfo — run_id', () => {
+  it('is null when run_id is absent', () => {
+    expect(parseInfo(REDIS_8X).runId).toBeNull();
+  });
+
+  it('parses run_id when present', () => {
+    expect(parseInfo(WITH_RUN_ID).runId).toBe('a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d4f1');
   });
 });
 

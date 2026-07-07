@@ -1,6 +1,7 @@
 import { tcpProbe, TcpProbeResult } from './tcp';
 import { createLimiter } from './concurrency';
 import type { ScanController } from './control';
+import type { ResolvedHost } from './hostname';
 
 export { TcpProbeResult };
 
@@ -21,10 +22,14 @@ const DEFAULT_TIMEOUT_MS = 1000;
 const DEFAULT_CONCURRENCY = 100;
 
 /**
- * Build a flat list of (host, port) pairs from expanded host and port lists.
+ * Build a flat list of (host, port) pairs. A resolved host that carries its
+ * own explicit port (from a "host:port" target) produces a single target on
+ * that port; every other resolved host is cross-joined against sharedPorts.
  */
-export function buildTargets(hosts: string[], ports: number[]): ScanTarget[] {
-  return hosts.flatMap((host) => ports.map((port) => ({ host, port })));
+export function buildTargets(hosts: ResolvedHost[], sharedPorts: number[]): ScanTarget[] {
+  return hosts.flatMap(({ host, port }) =>
+    port !== null ? [{ host, port }] : sharedPorts.map((p) => ({ host, port: p })),
+  );
 }
 
 /**

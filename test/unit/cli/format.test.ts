@@ -28,7 +28,9 @@ const OPEN: DiscoveryResult = {
     keyspace: [],
     modules: [],
     clusterInfo: null,
+    runId: 'a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d4f1',
   },
+  tlsCertificate: null,
 };
 
 const AUTH_REQUIRED: DiscoveryResult = {
@@ -127,6 +129,49 @@ describe('formatTable', () => {
     const lines = out.split('\n').filter((l) => l.trim());
     const lengths = lines.map((l) => l.length);
     expect(new Set(lengths).size).toBe(1);
+  });
+});
+
+describe('formatTable — duplicate run_id warning', () => {
+  it('adds no warning when no results share a run_id', () => {
+    expect(formatTable([OPEN, AUTH_REQUIRED])).not.toContain('⚠');
+  });
+
+  it('warns when two results share the same run_id, listing both endpoints', () => {
+    const other: DiscoveryResult = { ...OPEN, host: '10.0.0.9', port: 12000 };
+    const out = formatTable([OPEN, other]);
+    expect(out).toContain('⚠');
+    expect(out).toContain('Run ID');
+    expect(out).toContain('10.0.0.1:6379');
+    expect(out).toContain('10.0.0.9:12000');
+  });
+
+  it('never warns when the shared field is a missing run_id', () => {
+    const noRunId1: DiscoveryResult = {
+      ...AUTH_REQUIRED,
+      host: '10.0.0.5',
+      inventory: { ...OPEN.inventory!, runId: null },
+      authRequired: false,
+      anonymousStatus: 'open',
+    };
+    const noRunId2: DiscoveryResult = { ...noRunId1, host: '10.0.0.6' };
+    expect(formatTable([noRunId1, noRunId2])).not.toContain('⚠');
+  });
+
+  it('reports one warning line per duplicate group', () => {
+    const groupA2: DiscoveryResult = { ...OPEN, host: '10.0.0.10' };
+    const groupB1: DiscoveryResult = {
+      ...OPEN,
+      host: '10.0.0.20',
+      inventory: { ...OPEN.inventory!, runId: 'different-run-id-00000000000000000000000' },
+    };
+    const groupB2: DiscoveryResult = { ...groupB1, host: '10.0.0.21' };
+
+    const out = formatTable([OPEN, groupA2, groupB1, groupB2]);
+    expect(out).toContain('2 groups');
+    expect(out).toContain('10.0.0.10');
+    expect(out).toContain('10.0.0.20');
+    expect(out).toContain('10.0.0.21');
   });
 });
 

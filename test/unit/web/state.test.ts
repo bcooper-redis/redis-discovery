@@ -43,7 +43,9 @@ const RESULT: DiscoveryResult = {
     keyspace: [],
     modules: [],
     clusterInfo: null,
+    runId: null,
   },
+  tlsCertificate: null,
 };
 
 let state: AppState;

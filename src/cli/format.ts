@@ -1,4 +1,4 @@
-import { productDisplay } from '../types';
+import { productDisplay, findRunIdDuplicates } from '../types';
 import type { DiscoveryResult } from '../types';
 
 function authDisplay(r: DiscoveryResult): string {
@@ -50,6 +50,31 @@ function toRow(r: DiscoveryResult): Row {
   };
 }
 
+/**
+ * Warns when 2+ results share a run_id — the same running redis-server
+ * process reachable through more than one host:port (e.g. a Redis
+ * Enterprise database answering on every cluster node behind its proxy).
+ * Returns '' when there's nothing to warn about.
+ */
+function formatDuplicateWarning(results: DiscoveryResult[]): string {
+  const groups = findRunIdDuplicates(results);
+  if (groups.length === 0) return '';
+
+  const lines = groups.map((group) => {
+    const runId = group[0].inventory?.runId ?? '';
+    const shortId = runId.length > 12 ? `${runId.slice(0, 12)}…` : runId;
+    const endpoints = group.map((r) => `${r.host}:${r.port}`).join(', ');
+    return `  ${shortId}  ${endpoints}`;
+  });
+  const groupWord = groups.length === 1 ? 'group' : 'groups';
+
+  return (
+    `\n\n⚠ ${groups.length} ${groupWord} of results share the same Run ID — likely the ` +
+    `same\n  database reachable through multiple endpoints (common with Redis\n` +
+    `  Enterprise's proxy layer):\n${lines.join('\n')}`
+  );
+}
+
 export function formatTable(results: DiscoveryResult[]): string {
   if (results.length === 0) return 'No Redis instances found.';
   const rows = results.map(toRow);
@@ -60,7 +85,7 @@ export function formatTable(results: DiscoveryResult[]): string {
   const header = KEYS.map((k) => HEADERS[k].padEnd(widths[k])).join(sep);
   const divider = KEYS.map((k) => '─'.repeat(widths[k])).join(sep);
   const lines = rows.map((row) => KEYS.map((k) => row[k].padEnd(widths[k])).join(sep));
-  return [header, divider, ...lines].join('\n');
+  return [header, divider, ...lines].join('\n') + formatDuplicateWarning(results);
 }
 
 export function formatJson(results: DiscoveryResult[]): string {

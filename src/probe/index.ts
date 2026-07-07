@@ -1,7 +1,8 @@
+import * as tls from 'tls';
 import Redis from 'ioredis';
 import { parseInfo, parseModuleList, parseClusterInfo, refineProductWithModules } from './info';
 import type { ParsedInfo } from './info';
-import type { AuthCredentials, ModuleInfo, ClusterInfo } from '../types';
+import type { AuthCredentials, ModuleInfo, ClusterInfo, TlsCertificateInfo } from '../types';
 
 export { parseInfo };
 export type { ParsedInfo };
@@ -32,10 +33,52 @@ export interface ProbeResult {
   keyspace: ParsedInfo['keyspace'];
   modules: ModuleInfo[];
   clusterInfo: ClusterInfo | null;
+  runId: ParsedInfo['runId'];
   rawInfo: string | null;
+  tlsCertificate: TlsCertificateInfo | null;
 }
 
-const UNKNOWN_INFO: Omit<ProbeResult, 'isRedis' | 'authRequired' | 'wrongPassword' | 'tls'> = {
+/** The CN if present, else "K=V, ..." for whatever fields exist, else null. */
+function formatDistinguishedName(dn: tls.Certificate | undefined): string | null {
+  if (!dn) return null;
+  if (dn.CN) return Array.isArray(dn.CN) ? dn.CN.join(', ') : dn.CN;
+  const parts = Object.entries(dn)
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join('+') : v}`);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+/**
+ * Reads the peer certificate straight off the TLS socket. This happens
+ * during the handshake, entirely independent of Redis-level AUTH — it's
+ * available even when the server requires credentials we don't have.
+ */
+function extractTlsCertificate(redis: Redis): TlsCertificateInfo | null {
+  const socket = redis.stream;
+  if (!(socket instanceof tls.TLSSocket)) return null;
+  try {
+    const cert = socket.getPeerCertificate();
+    if (!cert || Object.keys(cert).length === 0) return null;
+    const subject = formatDistinguishedName(cert.subject);
+    const issuer = formatDistinguishedName(cert.issuer);
+    return {
+      subject,
+      issuer,
+      validFrom: cert.valid_from ?? null,
+      validTo: cert.valid_to ?? null,
+      selfSigned: subject !== null && subject === issuer,
+      trusted: socket.authorized === true,
+      fingerprint256: cert.fingerprint256 ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+const UNKNOWN_INFO: Omit<
+  ProbeResult,
+  'isRedis' | 'authRequired' | 'wrongPassword' | 'tls' | 'tlsCertificate'
+> = {
   product: 'unknown',
   version: null,
   mode: null,
@@ -52,6 +95,7 @@ const UNKNOWN_INFO: Omit<ProbeResult, 'isRedis' | 'authRequired' | 'wrongPasswor
   keyspace: [],
   modules: [],
   clusterInfo: null,
+  runId: null,
   rawInfo: null,
 };
 
@@ -77,7 +121,24 @@ async function attemptProbe(
     enableOfflineQueue: false,
     enableReadyCheck: false,
     retryStrategy: () => null,
-    ...(useTls ? { tls: { rejectUnauthorized: !skipVerify } } : {}),
+    ...(useTls
+      ? {
+          tls: {
+            rejectUnauthorized: !skipVerify,
+            // We always connect by IP (targets are resolved before probing),
+            // never by the hostname the cert was actually issued for — so
+            // Node's default hostname-vs-SAN check would fail on virtually
+            // every real-world cert regardless of chain validity, making
+            // rejectUnauthorized:true useless for real targets and the
+            // `trusted` field always false. That check exists to stop a
+            // browser-style MITM against a specific hostname; it doesn't
+            // apply to IP-based reconnaissance, so skip it and let
+            // rejectUnauthorized/`trusted` reflect only genuine chain,
+            // signature, and expiry problems.
+            checkServerIdentity: () => undefined,
+          },
+        }
+      : {}),
   });
 
   redis.on('error', () => {});
@@ -88,6 +149,10 @@ async function attemptProbe(
     } catch {
       return null;
     }
+
+    // Read before any auth attempt — the handshake already happened, so the
+    // cert is available regardless of whether AUTH/PING succeed below.
+    const tlsCertificate = extractTlsCertificate(redis);
 
     if (credentials) {
       try {
@@ -105,6 +170,7 @@ async function attemptProbe(
             authRequired: true,
             wrongPassword: true,
             tls: useTls,
+            tlsCertificate,
             ...UNKNOWN_INFO,
           };
         }
@@ -123,6 +189,7 @@ async function attemptProbe(
           authRequired: true,
           wrongPassword: false,
           tls: useTls,
+          tlsCertificate,
           ...UNKNOWN_INFO,
         };
       }
@@ -166,6 +233,7 @@ async function attemptProbe(
         authRequired: false,
         wrongPassword: false,
         tls: useTls,
+        tlsCertificate,
         rawInfo,
         ...parsed,
         product,
@@ -178,6 +246,7 @@ async function attemptProbe(
         authRequired: false,
         wrongPassword: false,
         tls: useTls,
+        tlsCertificate,
         ...UNKNOWN_INFO,
       };
     }
@@ -225,6 +294,7 @@ export async function probeHost(
       authRequired: false,
       wrongPassword: false,
       tls: false,
+      tlsCertificate: null,
       ...UNKNOWN_INFO,
     }
   );

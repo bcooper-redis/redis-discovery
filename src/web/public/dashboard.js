@@ -77,14 +77,28 @@
   }
 
   // Client-side only — the file is read and parsed in the browser and never
-  // uploaded anywhere. It just replaces the Targets/Ports fields, so
-  // everything downstream (submit, sessionStorage, scan-size validation)
-  // works exactly as if the targets had been typed by hand.
+  // uploaded anywhere. It just replaces the Targets field, so everything
+  // downstream (submit, sessionStorage, scan-size validation) works exactly
+  // as if the targets had been typed by hand.
   csvUpload.addEventListener('change', () => {
     const file = csvUpload.files[0];
     csvUploadStatus.textContent = '';
     csvUploadStatus.classList.remove('error');
     if (!file) return;
+
+    // Strips at most one leading and one trailing quote, independently of
+    // each other. A spreadsheet-exported CSV often quotes a whole row as one
+    // unit when it contains a comma (e.g. "host,port" typed into a single
+    // cell) — naively splitting that row on its embedded comma leaves a
+    // stray quote stuck to each half, since neither half has a matching
+    // pair on its own. This also handles ordinary one-quote-per-field CSVs
+    // the same way, since stripping is applied per cell either way.
+    function stripQuotes(cell) {
+      let result = cell.trim();
+      if (result.startsWith('"')) result = result.slice(1);
+      if (result.endsWith('"')) result = result.slice(0, -1);
+      return result.trim();
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -92,38 +106,43 @@
         .split(/\r\n|\r|\n/)
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((line) => line.split(',').map((cell) => cell.trim()));
+        .map((line) => line.split(',').map(stripQuotes));
 
       // Skip an optional header row, e.g. "host,port" or "hostname,ip".
       if (rows.length > 0 && /^(host|hostname|ip|ip ?address|target)s?$/i.test(rows[0][0])) {
         rows.shift();
       }
 
-      const hosts = new Set();
-      const ports = new Set();
+      // Each row's port travels with its host as "host:port" rather than
+      // being pooled into the shared Ports field — otherwise a file with a
+      // different port per host would scan every host on every port in the
+      // file instead of just its own pairing.
+      const targets = new Set();
+      let pairedCount = 0;
       for (const [host, port] of rows) {
-        if (host) hosts.add(host);
-        if (port) ports.add(port);
+        if (!host) continue;
+        if (port) {
+          targets.add(`${host}:${port}`);
+          pairedCount++;
+        } else {
+          targets.add(host);
+        }
       }
 
       csvUpload.value = ''; // lets re-uploading the same filename fire 'change' again
 
-      if (hosts.size === 0) {
+      if (targets.size === 0) {
         csvUploadStatus.textContent = `No targets found in ${file.name}.`;
         csvUploadStatus.classList.add('error');
         return;
       }
 
-      form.cidrs.value = Array.from(hosts).join('\n');
+      form.cidrs.value = Array.from(targets).join('\n');
       fireInput(form.cidrs);
-      if (ports.size > 0) {
-        form.ports.value = Array.from(ports).join(',');
-        fireInput(form.ports);
-      }
 
       csvUploadStatus.textContent =
-        `Loaded ${hosts.size} target${hosts.size === 1 ? '' : 's'} from ${file.name}` +
-        (ports.size > 0 ? ` (ports: ${Array.from(ports).join(', ')})` : '');
+        `Loaded ${targets.size} target${targets.size === 1 ? '' : 's'} from ${file.name}` +
+        (pairedCount > 0 ? ` (${pairedCount} with an explicit port)` : '');
     };
     reader.onerror = () => {
       csvUpload.value = '';

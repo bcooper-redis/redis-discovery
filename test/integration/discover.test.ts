@@ -64,6 +64,7 @@ describe('discover — end-to-end pipeline', () => {
     expect(Array.isArray(r.inventory!.keyspace)).toBe(true);
     expect(Array.isArray(r.inventory!.modules)).toBe(true);
     expect(r.inventory!.clusterInfo).toBeNull(); // standalone container, not cluster mode
+    expect(r.inventory!.runId).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it('Valkey result has expected shape', async () => {
@@ -76,6 +77,7 @@ describe('discover — end-to-end pipeline', () => {
     expect(r.product).toBe('valkey');
     expect(r.anonymousStatus).toBe('open');
     expect(r.inventory).not.toBeNull();
+    expect(r.inventory!.runId).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it('skips closed ports and returns no results for unreachable CIDR', async () => {
@@ -121,6 +123,47 @@ describe('discover — hostname targets', () => {
     await expect(
       discover({ ...BASE_CONFIG, cidrs: ['this-does-not-exist.invalid'] }),
     ).rejects.toThrow(/could not resolve hostname/i);
+  });
+
+  it("run_id is stable across repeated probes of the real container — the property findRunIdDuplicates relies on", async () => {
+    // Two independent discover() calls against the very same running
+    // redis-server process must report the identical run_id both times.
+    // If run_id varied per-connection, treating a matching run_id as "this
+    // is the same database" (as the CLI/Web UI duplicate warning does)
+    // would be unsound.
+    const first = await discover({ ...BASE_CONFIG, ports: [REDIS_8_PORT] });
+    const second = await discover({ ...BASE_CONFIG, ports: [REDIS_8_PORT] });
+    expect(first[0].inventory!.runId).not.toBeNull();
+    expect(first[0].inventory!.runId).toBe(second[0].inventory!.runId);
+  });
+});
+
+describe('discover — explicit per-target port', () => {
+  it('scans a ":port" target on its own port, ignoring the shared ports list', async () => {
+    // If this regressed to the old cross-product-only behavior, the explicit
+    // port would be discarded and this target would only be tried on 19999
+    // (nothing listening there), finding nothing.
+    const results = await discover({
+      ...BASE_CONFIG,
+      cidrs: [`127.0.0.1:${REDIS_8_PORT}`],
+      ports: [19999],
+    });
+    expect(results.length).toBe(1);
+    expect(results[0].port).toBe(REDIS_8_PORT);
+    expect(results[0].product).toBe('redis');
+  });
+
+  it('mixes an explicit-port target with a shared-port target without cross-joining them — the CSV-upload bug', async () => {
+    // The exact shape of a CSV with distinct ports per host: this must find
+    // precisely these 2 pairs, not the 2x2 cross product a flattened
+    // hosts-list/ports-list would have produced.
+    const results = await discover({
+      ...BASE_CONFIG,
+      cidrs: [`127.0.0.1:${REDIS_8_PORT}`, '127.0.0.1'],
+      ports: [VALKEY_PORT],
+    });
+    const found = results.map((r) => `${r.host}:${r.port}`).sort();
+    expect(found).toEqual([`127.0.0.1:${REDIS_8_PORT}`, `127.0.0.1:${VALKEY_PORT}`].sort());
   });
 });
 

@@ -32,7 +32,9 @@ export function registerScan(program: Command): void {
     .description('Scan one or more CIDRs for Redis instances')
     .option(
       '-c, --cidr <target>',
-      'CIDR, IP, or hostname to scan — repeatable: -c 10.0.0.0/24 -c redis.example.com',
+      'CIDR, IP, or hostname to scan — repeatable: -c 10.0.0.0/24 -c redis.example.com. ' +
+        'Add :port (e.g. redis.example.com:6380) to scan that target on a specific port ' +
+        'instead of --port',
       (v: string, acc: string[]) => [...acc, v],
       [] as string[],
     )

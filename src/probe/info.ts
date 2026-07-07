@@ -20,6 +20,7 @@ export interface ParsedInfo {
   replication: ReplicationInfo;
   memory: MemoryInfo;
   keyspace: KeyspaceDb[];
+  runId: string | null;
 }
 
 /**
@@ -39,6 +40,7 @@ export function parseInfo(raw: string): ParsedInfo {
     replication: parseReplication(fields),
     memory: parseMemory(fields),
     keyspace: parseKeyspace(fields),
+    runId: fields.get('run_id') ?? null,
   };
 }
 

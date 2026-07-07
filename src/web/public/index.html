@@ -39,7 +39,11 @@
               name="cidrs"
               placeholder="10.0.0.0/24&#10;192.168.1.50&#10;redis.example.com"
             ></textarea>
-            <p class="hint">Hostnames are resolved via DNS; all resolved addresses are scanned.</p>
+            <p class="hint">
+              Hostnames are resolved via DNS; all resolved addresses are scanned. Add
+              <code>:port</code> to a line (e.g. <code>redis.example.com:6380</code>) to scan that
+              target on a specific port instead of the shared Ports field below.
+            </p>
             <div class="csv-upload-row">
               <label for="csv-upload" class="btn secondary">Upload CSV</label>
               <input

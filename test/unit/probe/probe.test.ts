@@ -428,6 +428,20 @@ describe('probeHost — TLS open Redis', () => {
     expect(result.tls).toBe(true);
     expect(result.authRequired).toBe(false);
     expect(result.version).toBe('8.0.0');
+    expect(result.tlsCertificate).not.toBeNull();
+    expect(result.tlsCertificate!.subject).toBe('localhost');
+    expect(result.tlsCertificate!.selfSigned).toBe(true);
+    // Connected with tlsSkipVerify:true, so Node never validated the chain.
+    expect(result.tlsCertificate!.trusted).toBe(false);
+  });
+
+  it('returns tlsCertificate:null for a plain (non-TLS) connection', async () => {
+    const mock = await startPlainServer(openRedisHandler);
+    const result = await probeHost('127.0.0.1', mock.port, 1000);
+    await mock.close();
+    expect(result.isRedis).toBe(true);
+    expect(result.tls).toBe(false);
+    expect(result.tlsCertificate).toBeNull();
   });
 
   it('returns tls:false when connecting to a plain server with tls:true (fallback)', async () => {
@@ -463,6 +477,31 @@ describe('probeHost — TLS open Redis', () => {
     expect(result.isRedis).toBe(true);
     expect(result.authRequired).toBe(true);
     expect(result.tls).toBe(true);
+  });
+
+  it('reads the certificate even when auth is required — the whole point of the field', async () => {
+    const mock = await startTlsServer(noauthHandler);
+    const result = await probeHost('127.0.0.1', mock.port, 2000, {
+      tls: true,
+      tlsSkipVerify: true,
+    });
+    await mock.close();
+    expect(result.authRequired).toBe(true);
+    expect(result.tlsCertificate).not.toBeNull();
+    expect(result.tlsCertificate!.subject).toBe('localhost');
+  });
+
+  it('reads the certificate even when the provided password is wrong', async () => {
+    const mock = await startTlsServer(authRequiredHandler);
+    const result = await probeHost('127.0.0.1', mock.port, 2000, {
+      tls: true,
+      tlsSkipVerify: true,
+      credentials: { password: 'definitely-not-secret' },
+    });
+    await mock.close();
+    expect(result.wrongPassword).toBe(true);
+    expect(result.tlsCertificate).not.toBeNull();
+    expect(result.tlsCertificate!.subject).toBe('localhost');
   });
 });
 

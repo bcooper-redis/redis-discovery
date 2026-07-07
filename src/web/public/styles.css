@@ -220,6 +220,16 @@ button:disabled {
   display: block;
 }
 
+.duplicate-banner {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.87rem;
+  margin-bottom: 1rem;
+}
+
 .targets-banner {
   display: flex;
   align-items: center;
@@ -254,6 +264,11 @@ button:disabled {
   font-family: monospace;
   background: var(--muted-bg);
   color: var(--text);
+}
+
+.run-id {
+  font-family: monospace;
+  font-size: 0.83rem;
 }
 
 .badge.auto-detected {
@@ -337,12 +352,15 @@ tbody tr:hover {
 }
 
 .badge.open,
-.badge.authenticated {
+.badge.authenticated,
+.badge.trusted {
   background: var(--ok-bg);
   color: var(--ok);
 }
 .badge.auth_required,
-.badge.not_attempted {
+.badge.not_attempted,
+.badge.duplicate,
+.badge.self-signed {
   background: var(--warn-bg);
   color: var(--warn);
 }

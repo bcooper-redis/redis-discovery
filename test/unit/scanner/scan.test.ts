@@ -24,8 +24,14 @@ async function getFreePort(): Promise<number> {
 }
 
 describe('buildTargets', () => {
-  it('cross-joins hosts and ports', () => {
-    const targets = buildTargets(['10.0.0.1', '10.0.0.2'], [6379, 6380]);
+  it('cross-joins hosts and shared ports when hosts have no explicit port', () => {
+    const targets = buildTargets(
+      [
+        { host: '10.0.0.1', port: null },
+        { host: '10.0.0.2', port: null },
+      ],
+      [6379, 6380],
+    );
     expect(targets).toEqual([
       { host: '10.0.0.1', port: 6379 },
       { host: '10.0.0.1', port: 6380 },
@@ -38,8 +44,35 @@ describe('buildTargets', () => {
     expect(buildTargets([], [6379])).toEqual([]);
   });
 
-  it('returns empty array for empty ports', () => {
-    expect(buildTargets(['10.0.0.1'], [])).toEqual([]);
+  it('returns empty array for empty shared ports when no host has its own explicit port', () => {
+    expect(buildTargets([{ host: '10.0.0.1', port: null }], [])).toEqual([]);
+  });
+
+  it('gives a host with an explicit port exactly one target, ignoring the shared ports list', () => {
+    const targets = buildTargets([{ host: '10.0.0.1', port: 6380 }], [6379, 6381, 6382]);
+    expect(targets).toEqual([{ host: '10.0.0.1', port: 6380 }]);
+  });
+
+  it('does not cross-join an explicit-port host even when the shared ports list is empty', () => {
+    expect(buildTargets([{ host: '10.0.0.1', port: 6380 }], [])).toEqual([
+      { host: '10.0.0.1', port: 6380 },
+    ]);
+  });
+
+  it('handles a mix of explicit-port and shared-port hosts in one call — the exact CSV-upload scenario', () => {
+    const targets = buildTargets(
+      [
+        { host: '10.0.0.1', port: 6380 },
+        { host: '10.0.0.2', port: null },
+        { host: '10.0.0.3', port: 6381 },
+      ],
+      [6379],
+    );
+    expect(targets).toEqual([
+      { host: '10.0.0.1', port: 6380 },
+      { host: '10.0.0.2', port: 6379 },
+      { host: '10.0.0.3', port: 6381 },
+    ]);
   });
 });
 

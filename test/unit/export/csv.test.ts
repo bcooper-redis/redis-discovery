@@ -28,6 +28,24 @@ const OPEN: DiscoveryResult = {
     keyspace: [{ db: 0, keys: 5, expires: 1, avgTtlMs: 0 }],
     modules: [{ name: 'search', version: 20811, path: '/usr/lib/redis/modules/redisearch.so' }],
     clusterInfo: null,
+    runId: 'a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d4f1',
+  },
+  tlsCertificate: null,
+};
+
+const REPLICA: DiscoveryResult = {
+  ...OPEN,
+  host: '10.0.0.3',
+  inventory: {
+    ...OPEN.inventory!,
+    role: 'replica',
+    replication: {
+      connectedReplicas: [],
+      masterHost: '10.0.0.1',
+      masterPort: 6379,
+      masterLinkStatus: 'up',
+    },
+    runId: 'b4a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d',
   },
 };
 
@@ -39,6 +57,23 @@ const AUTH_REQUIRED: DiscoveryResult = {
   authenticatedStatus: 'not_attempted',
   version: null,
   inventory: null,
+};
+
+// Auth-required AND over TLS — the whole point of tlsCertificate living at
+// the top level: the cert is readable even though inventory is null here.
+const AUTH_REQUIRED_TLS: DiscoveryResult = {
+  ...AUTH_REQUIRED,
+  host: '10.0.0.4',
+  tls: true,
+  tlsCertificate: {
+    subject: 'db.example.com',
+    issuer: 'db.example.com',
+    validFrom: 'Jan 1 00:00:00 2026 GMT',
+    validTo: 'Jan 1 00:00:00 2027 GMT',
+    selfSigned: true,
+    trusted: false,
+    fingerprint256: 'AA:BB:CC',
+  },
 };
 
 describe('toCsv', () => {
@@ -54,6 +89,15 @@ describe('toCsv', () => {
     expect(lines[0]).toContain('Total Keys');
     expect(lines[0]).toContain('Modules');
     expect(lines[0]).toContain('Cluster State');
+    expect(lines[0]).toContain('Master Host');
+    expect(lines[0]).toContain('Master Port');
+    expect(lines[0]).toContain('Master Link Status');
+    expect(lines[0]).toContain('Run ID');
+    expect(lines[0]).toContain('Cert Subject');
+    expect(lines[0]).toContain('Cert Issuer');
+    expect(lines[0]).toContain('Cert Valid To');
+    expect(lines[0]).toContain('Cert Self-Signed');
+    expect(lines[0]).toContain('Cert Trusted');
   });
 
   it('includes a data row for each result', () => {
@@ -98,6 +142,53 @@ describe('toCsv', () => {
     expect(csv).not.toContain('1048576');
     expect(csv).not.toContain('noeviction');
     expect(csv).not.toContain('search');
+  });
+
+  it('populates master host/port/link status for a replica', () => {
+    const csv = toCsv([REPLICA]);
+    expect(csv).toContain('10.0.0.1'); // master host
+    expect(csv).toContain('6379'); // master port
+    expect(csv).toContain('up'); // master link status
+    expect(csv).toContain('replica');
+  });
+
+  it('leaves master host/port/link status empty for a master (no upstream)', () => {
+    const csv = toCsv([OPEN]);
+    const dataRow = csv.split('\r\n')[1];
+    const cells = dataRow.split(',');
+    const headerCells = toCsv([OPEN]).split('\r\n')[0].split(',');
+    expect(cells[headerCells.indexOf('Master Host')]).toBe('');
+    expect(cells[headerCells.indexOf('Master Link Status')]).toBe('');
+  });
+
+  it('populates the Run ID column', () => {
+    expect(toCsv([OPEN])).toContain('a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d4f1');
+  });
+
+  it('leaves Run ID empty when inventory is null', () => {
+    const csv = toCsv([AUTH_REQUIRED]);
+    expect(csv).not.toContain('a3f92c1e2b8d4f1a9c7e6d5b4a3f92c1e2b8d4f1');
+  });
+
+  it('populates certificate columns even when auth is required and inventory is null', () => {
+    const csv = toCsv([AUTH_REQUIRED_TLS]);
+    const dataRow = csv.split('\r\n')[1];
+    expect(dataRow).toContain('db.example.com');
+    expect(dataRow).toContain('true'); // self-signed
+    expect(dataRow).toContain('false'); // not trusted
+    // Confirms this isn't a fluke of the (null) inventory columns being blank —
+    // the row genuinely has both empty inventory cells AND populated cert cells.
+    expect(AUTH_REQUIRED_TLS.inventory).toBeNull();
+  });
+
+  it('leaves certificate columns empty for a plaintext connection', () => {
+    const csv = toCsv([OPEN]);
+    const dataRow = csv.split('\r\n')[1];
+    const headerCells = csv.split('\r\n')[0].split(',');
+    const cells = dataRow.split(',');
+    expect(cells[headerCells.indexOf('Cert Subject')]).toBe('');
+    expect(cells[headerCells.indexOf('Cert Self-Signed')]).toBe('');
+    expect(cells[headerCells.indexOf('Cert Trusted')]).toBe('');
   });
 
   it('quotes values containing commas', () => {

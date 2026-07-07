@@ -17,9 +17,18 @@ const CSV_HEADERS = [
   'Used Memory (bytes)',
   'Max Memory Policy',
   'Connected Replicas',
+  'Master Host',
+  'Master Port',
+  'Master Link Status',
   'Total Keys',
   'Modules',
   'Cluster State',
+  'Run ID',
+  'Cert Subject',
+  'Cert Issuer',
+  'Cert Valid To',
+  'Cert Self-Signed',
+  'Cert Trusted',
 ];
 
 function escape(val: string): string {
@@ -51,9 +60,18 @@ function toRow(r: DiscoveryResult): string {
     r.inventory?.memory.usedMemoryBytes != null ? String(r.inventory.memory.usedMemoryBytes) : '',
     r.inventory?.memory.maxMemoryPolicy ?? '',
     r.inventory ? String(r.inventory.replication.connectedReplicas.length) : '',
+    r.inventory?.replication.masterHost ?? '',
+    r.inventory?.replication.masterPort != null ? String(r.inventory.replication.masterPort) : '',
+    r.inventory?.replication.masterLinkStatus ?? '',
     totalKeys(r),
     r.inventory?.modules.map((m) => m.name).join(', ') ?? '',
     r.inventory?.clusterInfo?.state ?? '',
+    r.inventory?.runId ?? '',
+    r.tlsCertificate?.subject ?? '',
+    r.tlsCertificate?.issuer ?? '',
+    r.tlsCertificate?.validTo ?? '',
+    r.tlsCertificate ? String(r.tlsCertificate.selfSigned) : '',
+    r.tlsCertificate ? String(r.tlsCertificate.trusted) : '',
   ]
     .map(escape)
     .join(',');
