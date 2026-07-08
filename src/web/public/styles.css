@@ -221,6 +221,11 @@ button:disabled {
 }
 
 .duplicate-banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
   background: var(--warn-bg);
   color: var(--warn);
   border: 1px solid var(--warn);
@@ -228,6 +233,27 @@ button:disabled {
   padding: 0.6rem 0.9rem;
   font-size: 0.87rem;
   margin-bottom: 1rem;
+}
+
+.duplicate-banner.visible {
+  display: flex;
+}
+
+/* Once the user has hidden duplicates, there's nothing left to warn about —
+   de-escalate from the warning color to a neutral, informational one. */
+.duplicate-banner.info {
+  background: var(--muted-bg);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.duplicate-toggle {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.duplicate-toggle label {
+  font-size: 0.85rem;
 }
 
 .targets-banner {
@@ -240,6 +266,14 @@ button:disabled {
   border-radius: 8px;
   padding: 0.7rem 1.1rem;
   margin-bottom: 1.25rem;
+}
+
+.export-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
 }
 
 .targets-label {

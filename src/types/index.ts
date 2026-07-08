@@ -126,6 +126,26 @@ export function findRunIdDuplicates(results: DiscoveryResult[]): DiscoveryResult
   return Array.from(byRunId.values()).filter((group) => group.length > 1);
 }
 
+/**
+ * Collapses each run_id-duplicate group down to its first occurrence —
+ * the same database found at N endpoints is kept once rather than N times.
+ * Results without a run_id (e.g. auth required, inventory unavailable) are
+ * never treated as duplicates and always pass through untouched, since
+ * there's no evidence they're the same database as anything else.
+ * Order-preserving: with discover()'s grouping-aware sort, the surviving
+ * result is the earliest-sorting member of its group.
+ */
+export function dedupeByRunId(results: DiscoveryResult[]): DiscoveryResult[] {
+  const seenRunIds = new Set<string>();
+  return results.filter((r) => {
+    const runId = r.inventory?.runId;
+    if (!runId) return true;
+    if (seenRunIds.has(runId)) return false;
+    seenRunIds.add(runId);
+    return true;
+  });
+}
+
 export interface ScanConfig {
   cidrs: string[];
   ports: number[];

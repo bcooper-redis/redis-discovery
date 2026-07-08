@@ -74,6 +74,35 @@ describe('buildTargets', () => {
       { host: '10.0.0.3', port: 6381 },
     ]);
   });
+
+  it('dedupes an identical (host, port) pair produced by two resolved-host entries — the auto-detect double-subnet bug', () => {
+    // e.g. detectLocalCidrs() returning the same /24 twice before its own fix
+    // (Wi-Fi and Ethernet on the same subnet), or a literal IP that's also
+    // covered by an overlapping CIDR.
+    const targets = buildTargets(
+      [
+        { host: '10.0.0.1', port: null },
+        { host: '10.0.0.1', port: null },
+        { host: '10.0.0.2', port: null },
+      ],
+      [6379],
+    );
+    expect(targets).toEqual([
+      { host: '10.0.0.1', port: 6379 },
+      { host: '10.0.0.2', port: 6379 },
+    ]);
+  });
+
+  it('dedupes across explicit-port and shared-port entries that collide on the same (host, port)', () => {
+    const targets = buildTargets(
+      [
+        { host: '10.0.0.1', port: 6379 },
+        { host: '10.0.0.1', port: null },
+      ],
+      [6379],
+    );
+    expect(targets).toEqual([{ host: '10.0.0.1', port: 6379 }]);
+  });
 });
 
 describe('scanTargets', () => {

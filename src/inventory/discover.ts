@@ -6,7 +6,32 @@ import type { ScanController } from '../scanner/control';
 import { probeHost } from '../probe/index';
 import type { ProbeOptions } from '../probe/index';
 import { assembleResult } from './assemble';
+import { findRunIdDuplicates } from '../types';
 import type { ScanConfig, AuthCredentials, DiscoveryResult } from '../types';
+
+function compareHostPort(a: DiscoveryResult, b: DiscoveryResult): number {
+  return a.host.localeCompare(b.host) || a.port - b.port;
+}
+
+/**
+ * Sorts by host then port, except results that share a run_id (the same
+ * database reachable through more than one endpoint) are kept adjacent —
+ * clustered at the position of the earliest-sorting member of their group —
+ * instead of scattered wherever their own host happens to fall.
+ */
+function sortWithRunIdGrouping(results: DiscoveryResult[]): DiscoveryResult[] {
+  const groupAnchor = new Map<DiscoveryResult, DiscoveryResult>();
+  for (const group of findRunIdDuplicates(results)) {
+    const earliest = [...group].sort(compareHostPort)[0];
+    for (const r of group) groupAnchor.set(r, earliest);
+  }
+
+  return [...results].sort((a, b) => {
+    const anchorA = groupAnchor.get(a) ?? a;
+    const anchorB = groupAnchor.get(b) ?? b;
+    return compareHostPort(anchorA, anchorB) || compareHostPort(a, b);
+  });
+}
 
 export interface DiscoverOptions {
   credentials?: AuthCredentials;
@@ -24,7 +49,9 @@ export interface DiscoverOptions {
  * Run the full discovery pipeline: resolve targets (CIDRs, bare IPs, and
  * hostnames) → TCP scan → Redis probe → assemble DiscoveryResults. Returns
  * only hosts that responded as Redis. Results are sorted by host then port
- * for deterministic output.
+ * for deterministic output, except run_id-duplicate groups are kept adjacent
+ * (see sortWithRunIdGrouping) so the same database found at more than one
+ * endpoint reads as one cluster of rows rather than being scattered.
  */
 export async function discover(
   config: ScanConfig,
@@ -92,5 +119,5 @@ export async function discover(
     ),
   );
 
-  return results.sort((a, b) => a.host.localeCompare(b.host) || a.port - b.port);
+  return sortWithRunIdGrouping(results);
 }

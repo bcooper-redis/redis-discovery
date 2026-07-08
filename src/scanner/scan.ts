@@ -22,14 +22,26 @@ const DEFAULT_TIMEOUT_MS = 1000;
 const DEFAULT_CONCURRENCY = 100;
 
 /**
- * Build a flat list of (host, port) pairs. A resolved host that carries its
- * own explicit port (from a "host:port" target) produces a single target on
- * that port; every other resolved host is cross-joined against sharedPorts.
+ * Build a flat list of distinct (host, port) pairs. A resolved host that
+ * carries its own explicit port (from a "host:port" target) produces a
+ * single target on that port; every other resolved host is cross-joined
+ * against sharedPorts. Deduplicated — overlapping CIDRs, a duplicate
+ * auto-detected subnet (e.g. two interfaces on the same network), or a
+ * literal IP that's also inside a scanned range would otherwise scan (and
+ * report) the exact same target more than once.
  */
 export function buildTargets(hosts: ResolvedHost[], sharedPorts: number[]): ScanTarget[] {
-  return hosts.flatMap(({ host, port }) =>
+  const all = hosts.flatMap(({ host, port }) =>
     port !== null ? [{ host, port }] : sharedPorts.map((p) => ({ host, port: p })),
   );
+
+  const seen = new Set<string>();
+  return all.filter(({ host, port }) => {
+    const key = `${host}:${port}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**

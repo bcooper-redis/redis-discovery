@@ -45,16 +45,17 @@
             Restart
           </button>
           <button type="button" id="refresh-btn" class="secondary">Refresh</button>
-          <a href="/api/export/csv" class="btn secondary" download hx-boost="false">Export CSV</a>
-          <a href="/api/export/ini" class="btn secondary" download hx-boost="false">Export INI</a>
-          <a href="/api/export/xlsx" class="btn secondary" download hx-boost="false"
-            >Export XLSX (osstats)</a
-          >
         </span>
       </div>
 
       <div id="error-banner" class="error-banner"></div>
-      <div id="duplicate-banner" class="duplicate-banner" style="display: none"></div>
+      <div id="duplicate-banner" class="duplicate-banner">
+        <span id="duplicate-banner-text"></span>
+        <div class="checkbox-field duplicate-toggle">
+          <input type="checkbox" id="exclude-duplicates-checkbox" checked />
+          <label for="exclude-duplicates-checkbox">Hide duplicates</label>
+        </div>
+      </div>
 
       <div class="card" style="overflow-x: auto">
         <table id="results-table">
@@ -86,6 +87,24 @@
           <tbody id="results-body"></tbody>
         </table>
         <div id="empty-state" class="empty-state" style="display: none"></div>
+      </div>
+
+      <div class="export-actions">
+        <span class="targets-label">Export</span>
+        <a id="export-csv-link" href="/api/export/csv" class="btn secondary" download hx-boost="false"
+          >CSV</a
+        >
+        <a id="export-ini-link" href="/api/export/ini" class="btn secondary" download hx-boost="false"
+          >INI</a
+        >
+        <a
+          id="export-xlsx-link"
+          href="/api/export/xlsx"
+          class="btn secondary"
+          download
+          hx-boost="false"
+          >XLSX</a
+        >
       </div>
     </main>
 

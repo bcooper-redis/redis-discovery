@@ -1,10 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import * as os from 'os';
+import { describe, it, expect, vi } from 'vitest';
 import {
   expandCidr,
   cidrHostCount,
   detectLocalCidrs,
   assertScanSize,
 } from '../../../src/scanner/cidr';
+
+// networkInterfaces() can't be vi.spyOn'd directly (Node's ESM module
+// namespace isn't configurable) — mock the module instead, defaulting
+// through to the real implementation so every other test in this file still
+// sees this machine's actual interfaces. mockReturnValueOnce below overrides
+// it for exactly one call, then it reverts to the real thing automatically.
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('os')>();
+  return { ...actual, networkInterfaces: vi.fn(actual.networkInterfaces) };
+});
 
 describe('expandCidr', () => {
   it('/32 returns exactly the one address', () => {
@@ -113,5 +124,37 @@ describe('detectLocalCidrs', () => {
         expect(expanded.length).toBeGreaterThan(0);
       }
     }
+  });
+
+  describe('with multiple interfaces on the same subnet', () => {
+    function makeAddr(address: string, netmask: string): os.NetworkInterfaceInfoIPv4 {
+      return {
+        address,
+        netmask,
+        family: 'IPv4',
+        mac: '00:00:00:00:00:00',
+        internal: false,
+        cidr: `${address}/24`,
+      };
+    }
+
+    it('dedupes when Wi-Fi and Ethernet both sit on the same /24 — the exact bug reported live', () => {
+      // 192.168.1.166 (Wi-Fi) and 192.168.1.96 (Ethernet) both normalize to
+      // 192.168.1.0/24. Without dedup this returns that CIDR twice, silently
+      // doubling every target buildTargets() later produces.
+      vi.mocked(os.networkInterfaces).mockReturnValueOnce({
+        en0: [makeAddr('192.168.1.166', '255.255.255.0')],
+        en5: [makeAddr('192.168.1.96', '255.255.255.0')],
+      });
+      expect(detectLocalCidrs()).toEqual(['192.168.1.0/24']);
+    });
+
+    it('keeps genuinely different subnets separate', () => {
+      vi.mocked(os.networkInterfaces).mockReturnValueOnce({
+        en0: [makeAddr('192.168.1.166', '255.255.255.0')],
+        en5: [makeAddr('10.0.0.50', '255.255.255.0')],
+      });
+      expect(detectLocalCidrs().sort()).toEqual(['10.0.0.0/24', '192.168.1.0/24']);
+    });
   });
 });

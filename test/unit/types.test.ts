@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { productDisplay, findRunIdDuplicates } from '../../src/types/index';
+import { productDisplay, findRunIdDuplicates, dedupeByRunId } from '../../src/types/index';
 import type { DiscoveryResult, ScanConfig, AuthCredentials } from '../../src/types/index';
 
 function makeResult(host: string, port: number, runId: string | null): DiscoveryResult {
@@ -178,6 +178,54 @@ describe('findRunIdDuplicates', () => {
     expect(groups).toHaveLength(2);
     expect(groups).toContainEqual([a1, a2]);
     expect(groups).toContainEqual([b1, b2]);
+  });
+});
+
+describe('dedupeByRunId', () => {
+  it('leaves results with unique run_ids untouched', () => {
+    const results = [makeResult('10.0.0.1', 6379, 'aaa'), makeResult('10.0.0.2', 6379, 'bbb')];
+    expect(dedupeByRunId(results)).toEqual(results);
+  });
+
+  it('keeps only the first occurrence of a shared run_id', () => {
+    const a = makeResult('10.0.0.1', 12000, 'shared-id');
+    const b = makeResult('10.0.0.2', 12000, 'shared-id');
+    const c = makeResult('10.0.0.3', 12000, 'shared-id');
+    expect(dedupeByRunId([a, b, c])).toEqual([a]);
+  });
+
+  it('preserves surrounding order — only the duplicates themselves are removed', () => {
+    const a = makeResult('10.0.0.1', 12000, 'shared-id');
+    const other = makeResult('10.0.0.9', 6379, 'unique-id');
+    const b = makeResult('10.0.0.2', 12000, 'shared-id');
+    expect(dedupeByRunId([a, other, b])).toEqual([a, other]);
+  });
+
+  it('never drops results with a missing run_id, even if several have none', () => {
+    const noRunId1 = makeResult('10.0.0.1', 6379, null);
+    const noRunId2 = makeResult('10.0.0.2', 6379, null);
+    expect(dedupeByRunId([noRunId1, noRunId2])).toEqual([noRunId1, noRunId2]);
+  });
+
+  it('never drops a result with no inventory at all', () => {
+    const noInventory: DiscoveryResult = { ...makeResult('10.0.0.1', 6379, 'x'), inventory: null };
+    const withInventory = makeResult('10.0.0.2', 6379, 'x');
+    // noInventory has no run_id to match on, so it's kept regardless of what
+    // withInventory's run_id is — only withInventory itself could ever be a
+    // "duplicate" of some other x-carrying result, which there isn't here.
+    expect(dedupeByRunId([noInventory, withInventory])).toEqual([noInventory, withInventory]);
+  });
+
+  it('collapses multiple independent duplicate groups independently', () => {
+    const a1 = makeResult('10.0.0.1', 12000, 'group-a');
+    const a2 = makeResult('10.0.0.2', 12000, 'group-a');
+    const b1 = makeResult('10.0.0.3', 13000, 'group-b');
+    const b2 = makeResult('10.0.0.4', 13000, 'group-b');
+    expect(dedupeByRunId([a1, b1, a2, b2])).toEqual([a1, b1]);
+  });
+
+  it('returns an empty array for empty input', () => {
+    expect(dedupeByRunId([])).toEqual([]);
   });
 });
 

@@ -572,6 +572,65 @@ describe('GET /api/export/xlsx', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/export/{csv,ini,xlsx}?excludeDuplicates=true
+// ---------------------------------------------------------------------------
+
+describe('export ?excludeDuplicates=true', () => {
+  const DUP_A: DiscoveryResult = {
+    ...FIXTURE,
+    host: '10.0.0.1',
+    inventory: { ...FIXTURE.inventory!, runId: 'shared-run-id' },
+  };
+  const DUP_B: DiscoveryResult = {
+    ...FIXTURE,
+    host: '10.0.0.2',
+    inventory: { ...FIXTURE.inventory!, runId: 'shared-run-id' },
+  };
+  const UNRELATED: DiscoveryResult = {
+    ...FIXTURE,
+    host: '10.0.0.3',
+    inventory: { ...FIXTURE.inventory!, runId: 'unrelated-run-id' },
+  };
+
+  it('CSV: omits the second occurrence of a shared run_id, keeps the unrelated one', async () => {
+    state.finishScan([DUP_A, DUP_B, UNRELATED]);
+    const withoutFlag = await (await fetch(`${server.url}/api/export/csv`)).text();
+    expect(withoutFlag).toContain('10.0.0.1');
+    expect(withoutFlag).toContain('10.0.0.2');
+
+    const withFlag = await (
+      await fetch(`${server.url}/api/export/csv?excludeDuplicates=true`)
+    ).text();
+    expect(withFlag).toContain('10.0.0.1');
+    expect(withFlag).not.toContain('10.0.0.2');
+    expect(withFlag).toContain('10.0.0.3');
+  });
+
+  it('INI: omits the second occurrence of a shared run_id', async () => {
+    state.finishScan([DUP_A, DUP_B, UNRELATED]);
+    const withFlag = await (
+      await fetch(`${server.url}/api/export/ini?excludeDuplicates=true`)
+    ).text();
+    expect(withFlag).toContain('[10.0.0.1:');
+    expect(withFlag).not.toContain('[10.0.0.2:');
+    expect(withFlag).toContain('[10.0.0.3:');
+  });
+
+  it('XLSX: produces fewer rows when excluding duplicates', async () => {
+    state.finishScan([DUP_A, DUP_B, UNRELATED]);
+    const withoutFlag = Buffer.from(
+      await (await fetch(`${server.url}/api/export/xlsx`)).arrayBuffer(),
+    );
+    const withFlag = Buffer.from(
+      await (await fetch(`${server.url}/api/export/xlsx?excludeDuplicates=true`)).arrayBuffer(),
+    );
+    // A row of real data is never smaller than nothing — fewer data rows
+    // means a smaller sheet, a reliable signal without needing to unzip here.
+    expect(withFlag.length).toBeLessThan(withoutFlag.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Web UI static pages
 // ---------------------------------------------------------------------------
 

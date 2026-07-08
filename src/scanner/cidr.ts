@@ -113,10 +113,14 @@ export function assertScanSize(entries: string[]): void {
 /**
  * Return a normalised CIDR for each non-loopback IPv4 interface,
  * capped at /24 so auto-detect never generates more than 254 targets per interface.
+ *
+ * Deduplicated: a machine with two interfaces on the same subnet (e.g. Wi-Fi
+ * and Ethernet both on 192.168.1.0/24) would otherwise compute the identical
+ * resulting CIDR twice, silently doubling every target in the scan.
  */
 export function detectLocalCidrs(): string[] {
   const interfaces = os.networkInterfaces();
-  const cidrs: string[] = [];
+  const cidrs = new Set<string>();
 
   for (const iface of Object.values(interfaces)) {
     if (!iface) continue;
@@ -127,9 +131,9 @@ export function detectLocalCidrs(): string[] {
       const effectivePrefix = Math.max(actualPrefix, 24);
       const mask = prefixToMask(effectivePrefix);
       const networkInt = (ipToInt(addr.address) & mask) >>> 0;
-      cidrs.push(`${intToIp(networkInt)}/${effectivePrefix}`);
+      cidrs.add(`${intToIp(networkInt)}/${effectivePrefix}`);
     }
   }
 
-  return cidrs;
+  return Array.from(cidrs);
 }

@@ -10,6 +10,11 @@
   const targetsList = document.getElementById('targets-list');
   const targetsAutoBadge = document.getElementById('targets-auto-badge');
   const duplicateBanner = document.getElementById('duplicate-banner');
+  const duplicateBannerText = document.getElementById('duplicate-banner-text');
+  const excludeDuplicatesCheckbox = document.getElementById('exclude-duplicates-checkbox');
+  const exportCsvLink = document.getElementById('export-csv-link');
+  const exportIniLink = document.getElementById('export-ini-link');
+  const exportXlsxLink = document.getElementById('export-xlsx-link');
   const pauseResumeBtn = document.getElementById('pause-resume-btn');
   const stopBtn = document.getElementById('stop-btn');
   const restartBtn = document.getElementById('restart-btn');
@@ -65,6 +70,20 @@
       else byRunId.set(runId, [r]);
     }
     return Array.from(byRunId.values()).filter((group) => group.length > 1);
+  }
+
+  // Mirrors src/types/index.ts's dedupeByRunId — keeps only the first
+  // occurrence of each run_id, so the same database found at N endpoints is
+  // shown (and exported) once instead of N times.
+  function dedupeByRunId(results) {
+    const seenRunIds = new Set();
+    return results.filter((r) => {
+      const runId = r.inventory && r.inventory.runId;
+      if (!runId) return true;
+      if (seenRunIds.has(runId)) return false;
+      seenRunIds.add(runId);
+      return true;
+    });
   }
 
   // Maps "host:port" -> the OTHER host:port strings sharing its run_id, for
@@ -262,24 +281,39 @@
     targetsAutoBadge.style.display = state.autoDetected ? '' : 'none';
   }
 
-  function renderDuplicateBanner(duplicateGroups) {
-    duplicateBanner.innerHTML = '';
+  // hiddenCount is only meaningful (and only used) when the checkbox is
+  // checked — it's how many rows dedupeByRunId removed from view/exports.
+  function renderDuplicateBanner(duplicateGroups, hiddenCount) {
+    duplicateBannerText.innerHTML = '';
     if (duplicateGroups.length === 0) {
-      duplicateBanner.style.display = 'none';
+      duplicateBanner.classList.remove('visible');
       return;
     }
-    duplicateBanner.style.display = 'block';
+    duplicateBanner.classList.add('visible');
+    duplicateBanner.classList.toggle('info', excludeDuplicatesCheckbox.checked);
 
     const strong = document.createElement('strong');
-    const groupWord = duplicateGroups.length === 1 ? 'group' : 'groups';
-    strong.textContent = `⚠ ${duplicateGroups.length} ${groupWord} of results share the same Run ID. `;
-    duplicateBanner.appendChild(strong);
-
     const note = document.createElement('span');
-    note.textContent =
-      'That means the same database is reachable through more than one endpoint ' +
-      '(common with Redis Enterprise’s proxy layer) — see the Run ID column below.';
-    duplicateBanner.appendChild(note);
+
+    if (excludeDuplicatesCheckbox.checked) {
+      strong.textContent = `${hiddenCount} duplicate result${hiddenCount === 1 ? '' : 's'} hidden. `;
+      note.textContent = 'Uncheck below to see every endpoint each database was found at.';
+    } else {
+      const groupWord = duplicateGroups.length === 1 ? 'group' : 'groups';
+      strong.textContent = `⚠ ${duplicateGroups.length} ${groupWord} of results share the same Run ID. `;
+      note.textContent =
+        'That means the same database is reachable through more than one endpoint ' +
+        '(common with Redis Enterprise’s proxy layer) — see the Run ID column below.';
+    }
+    duplicateBannerText.appendChild(strong);
+    duplicateBannerText.appendChild(note);
+  }
+
+  function updateExportLinks() {
+    const suffix = excludeDuplicatesCheckbox.checked ? '?excludeDuplicates=true' : '';
+    exportCsvLink.href = `/api/export/csv${suffix}`;
+    exportIniLink.href = `/api/export/ini${suffix}`;
+    exportXlsxLink.href = `/api/export/xlsx${suffix}`;
   }
 
   function renderControlButtons(state) {
@@ -298,11 +332,24 @@
     restartBtn.disabled = false;
   }
 
+  // Re-set on every fetch; the checkbox's own change handler re-renders from
+  // this without a server round-trip, since hiding duplicates is a pure
+  // view/export filter, not something the server needs to know about.
+  let lastState = null;
+
   function render(state) {
+    lastState = state;
     renderTargetsBanner(state);
     renderControlButtons(state);
+    updateExportLinks();
+
     const duplicateGroups = findRunIdDuplicates(state.results);
-    renderDuplicateBanner(duplicateGroups);
+    const visibleResults = excludeDuplicatesCheckbox.checked
+      ? dedupeByRunId(state.results)
+      : state.results;
+    const hiddenCount = state.results.length - visibleResults.length;
+    renderDuplicateBanner(duplicateGroups, hiddenCount);
+
     statusPill.textContent = state.status;
     statusPill.className = `status-pill ${state.status}`;
 
@@ -319,7 +366,9 @@
         `${prefix}${state.progress.scanDone}/${state.progress.scanTotal} targets · ` +
         `probing ${state.progress.probeDone}/${state.progress.probeTotal} open ports`;
     } else if (state.status === 'done' || state.status === 'stopped') {
-      statusDetail.textContent = `${state.results.length} instance${state.results.length === 1 ? '' : 's'} found`;
+      const found = `${visibleResults.length} instance${visibleResults.length === 1 ? '' : 's'} found`;
+      statusDetail.textContent =
+        hiddenCount > 0 ? `${found} (${hiddenCount} duplicate${hiddenCount === 1 ? '' : 's'} hidden)` : found;
     } else {
       statusDetail.textContent = '';
     }
@@ -343,7 +392,7 @@
       return;
     }
 
-    if (state.results.length === 0) {
+    if (visibleResults.length === 0) {
       table.style.display = 'none';
       emptyState.style.display = 'block';
       if (state.status === 'scanning') {
@@ -358,11 +407,18 @@
 
     table.style.display = '';
     emptyState.style.display = 'none';
+    // Built from every result (not just the visible ones), so a row that
+    // remains visible after filtering still shows every endpoint — including
+    // now-hidden ones — its run_id was actually found at.
     const duplicateEndpoints = buildDuplicateEndpoints(duplicateGroups);
-    for (const r of state.results) {
+    for (const r of visibleResults) {
       tbody.appendChild(renderRow(r, duplicateEndpoints));
     }
   }
+
+  excludeDuplicatesCheckbox.addEventListener('change', () => {
+    if (lastState) render(lastState);
+  });
 
   async function fetchResults() {
     clearPollTimer();
