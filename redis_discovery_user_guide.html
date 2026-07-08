@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redis Discovery — User Guide</title>
+<style>
+:root {
+  --artifact-background: #ffffff;
+  --artifact-background-light: #f6f7f9;
+  --artifact-background-mid: #eef0f3;
+  --artifact-border-light: #e5e8ec;
+  --artifact-border-dark: #cfd4db;
+  --artifact-primary-brand: #ff4438;          /* Redis Red */
+  --artifact-primary-hover: #d8271c;
+  --artifact-primary-highlight: #163341;      /* Redis Dusk */
+  --artifact-ink: #163341;
+  --artifact-selected: #ffece9;
+  --artifact-text-primary: #163341;
+  --artifact-text-secondary: #5a6b72;
+  --artifact-text-highlight: #ffece9;
+  --artifact-code-bg: #10222b;
+  --artifact-code-text: #e7edf0;
+  --artifact-code-accent: #ff7a70;
+  --artifact-code-comment: #7f97a1;
+  --artifact-positive: #159a6a;
+  --artifact-negative: #dc4c4c;
+}
+html[data-theme='dark'] {
+  --artifact-background: #0c1418;
+  --artifact-background-light: #121e24;
+  --artifact-background-mid: #17262e;
+  --artifact-border-light: #23343d;
+  --artifact-border-dark: #354a54;
+  --artifact-primary-brand: #ff6459;
+  --artifact-primary-hover: #ff8078;
+  --artifact-primary-highlight: #f2f6f7;
+  --artifact-ink: #f2f6f7;
+  --artifact-selected: #2a1512;
+  --artifact-text-primary: #eef3f4;
+  --artifact-text-secondary: #9fb0b7;
+  --artifact-text-highlight: #2a1512;
+  --artifact-code-bg: #0a1216;
+  --artifact-code-text: #e7edf0;
+  --artifact-code-accent: #ff9089;
+  --artifact-code-comment: #7f97a1;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  letter-spacing: -0.005em;
+  background: var(--artifact-background);
+  color: var(--artifact-text-primary);
+  scroll-padding-top: 90px;
+}
+h1, h2, h3, h4 { color: var(--artifact-text-primary); line-height: 1.12; letter-spacing: -0.02em; }
+h1 { font-size: clamp(2.4rem, 6vw, 4rem); font-weight: 300; margin: 0; }
+h2 { font-size: clamp(1.6rem, 3.2vw, 2.4rem); font-weight: 400; margin: 0 0 .4em; }
+h3 { font-size: 1.3rem; font-weight: 600; margin: 2rem 0 .6rem; }
+h4 { font-size: 1.02rem; font-weight: 600; margin: 1.5rem 0 .4rem; letter-spacing: 0; }
+p { margin: .6em 0; }
+a { color: var(--artifact-primary-brand); text-decoration: none; }
+a:hover { color: var(--artifact-primary-hover); }
+.eyebrow {
+  font-family: "SF Mono", "IBM Plex Mono", "Consolas", monospace;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--artifact-primary-brand); margin: 0 0 1rem;
+}
+
+/* ---- Top bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 28px;
+  background: color-mix(in srgb, var(--artifact-background) 88%, transparent);
+  backdrop-filter: saturate(160%) blur(10px);
+  border-bottom: 1px solid var(--artifact-border-light);
+}
+.brand { display: flex; align-items: center; gap: 11px; font-weight: 600; letter-spacing: -0.01em; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 7px;
+  background: var(--artifact-primary-brand);
+  display: grid; place-items: center; flex-shrink: 0;
+}
+.brand-mark svg { width: 19px; height: 19px; display: block; }
+.brand small { display: block; font-weight: 400; font-size: 11px; color: var(--artifact-text-secondary); letter-spacing: 0.04em; }
+.topbar .pill {
+  margin-left: auto;
+  font-family: "SF Mono","IBM Plex Mono","Consolas",monospace; font-size: 11px;
+  color: var(--artifact-text-secondary);
+  border: 1px solid var(--artifact-border-dark); border-radius: 999px;
+  padding: 4px 11px;
+}
+
+/* ---- Hero ---- */
+.hero {
+  position: relative; overflow: hidden;
+  padding: 76px 28px 60px;
+  border-bottom: 1px solid var(--artifact-border-light);
+  background:
+    radial-gradient(1100px 380px at 82% -10%, var(--artifact-selected) 0%, transparent 62%),
+    var(--artifact-background);
+}
+.hero-inner { max-width: 1080px; margin: 0 auto; }
+.hero h1 { max-width: 16ch; }
+.hero .lede { font-size: 1.22rem; max-width: 62ch; color: var(--artifact-text-secondary); margin-top: 1.1rem; }
+.hero-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+.chip {
+  font-family: "SF Mono","IBM Plex Mono","Consolas",monospace; font-size: 12px;
+  padding: 7px 13px; border-radius: 7px;
+  border: 1px solid var(--artifact-border-dark);
+  color: var(--artifact-text-primary); background: var(--artifact-background);
+}
+.chip b { color: var(--artifact-primary-brand); font-weight: 600; }
+
+/* ---- Shell / layout ---- */
+.shell { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 258px minmax(0,1fr); gap: 44px; padding: 0 28px 90px; }
+.toc {
+  position: sticky; top: 74px; align-self: start;
+  max-height: calc(100vh - 96px); overflow-y: auto;
+  padding: 26px 0; margin-top: 12px;
+  border-right: 1px solid var(--artifact-border-light);
+}
+.toc .toc-label {
+  font-family:"SF Mono","IBM Plex Mono","Consolas",monospace; font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--artifact-text-secondary); padding: 0 14px 10px;
+}
+.toc a {
+  display: block; padding: 6px 14px; font-size: 13.5px; line-height: 1.35;
+  color: var(--artifact-text-secondary); border-left: 2px solid transparent;
+}
+.toc a:hover { color: var(--artifact-text-primary); }
+.toc a.active { color: var(--artifact-primary-brand); border-left-color: var(--artifact-primary-brand); font-weight: 600; }
+.content { min-width: 0; padding-top: 40px; }
+
+section { scroll-margin-top: 88px; padding: 26px 0 8px; border-top: 1px solid var(--artifact-border-light); }
+section:first-of-type { border-top: none; }
+.sec-num {
+  font-family:"SF Mono","IBM Plex Mono","Consolas",monospace; font-size: 13px; font-weight: 600;
+  color: var(--artifact-primary-brand); letter-spacing: .06em;
+}
+
+/* ---- Callouts ---- */
+.callout {
+  display: flex; gap: 13px; padding: 16px 18px; border-radius: 10px; margin: 18px 0;
+  background: var(--artifact-background-light); border: 1px solid var(--artifact-border-light);
+}
+.callout .ic { flex-shrink: 0; width: 22px; height: 22px; color: var(--artifact-primary-brand); margin-top: 1px; }
+.callout p { margin: 0; font-size: 14.5px; }
+.callout.warn { background: var(--artifact-selected); border-color: color-mix(in srgb, var(--artifact-primary-brand) 30%, transparent); }
+.callout.warn .ic { color: var(--artifact-primary-brand); }
+
+.whatsnew {
+  border: 1px solid var(--artifact-border-light); border-radius: 14px; padding: 22px 24px; margin: 22px 0 6px;
+  background: var(--artifact-background-light);
+}
+.whatsnew h3 { margin: 0 0 .6rem; display:flex; align-items:center; gap:9px; }
+.whatsnew ul { margin: .4rem 0 0; padding-left: 0; list-style: none; }
+.whatsnew li { position: relative; padding: 8px 0 8px 26px; font-size: 14.5px; border-top: 1px solid var(--artifact-border-light); }
+.whatsnew li:first-child { border-top: none; }
+.whatsnew li::before { content:""; position:absolute; left: 4px; top: 16px; width: 7px; height: 7px; border-radius: 2px; background: var(--artifact-primary-brand); }
+
+/* ---- Code ---- */
+pre {
+  background: var(--artifact-code-bg); color: var(--artifact-code-text);
+  border-radius: 10px; padding: 16px 18px; overflow-x: auto; margin: 14px 0;
+  font-family: "SF Mono","IBM Plex Mono","Consolas",monospace; font-size: 13px; line-height: 1.6;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+pre .c { color: var(--artifact-code-comment); }
+pre .k { color: var(--artifact-code-accent); }
+code {
+  font-family: "SF Mono","IBM Plex Mono","Consolas",monospace; font-size: 0.86em;
+  background: var(--artifact-background-mid); color: var(--artifact-primary-highlight);
+  padding: 2px 6px; border-radius: 5px;
+}
+pre code { background: none; color: inherit; padding: 0; font-size: 13px; }
+
+/* ---- Tables ---- */
+.table-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--artifact-border-light); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th {
+  text-align: left; font-family:"SF Mono","IBM Plex Mono","Consolas",monospace; font-size: 11.5px;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--artifact-text-secondary);
+  padding: 12px 16px; background: var(--artifact-background-light); border-bottom: 1px solid var(--artifact-border-dark);
+}
+td { padding: 12px 16px; border-bottom: 1px solid var(--artifact-border-light); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+td code { white-space: nowrap; }
+
+ul.clean { list-style: none; padding-left: 0; margin: 12px 0; }
+ul.clean li { position: relative; padding: 5px 0 5px 22px; }
+ul.clean li::before { content:""; position:absolute; left: 2px; top: 13px; width: 6px; height: 6px; border-radius: 50%; background: var(--artifact-primary-brand); }
+
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 16px 0; }
+.card {
+  border: 1px solid var(--artifact-border-light); border-radius: 12px; padding: 20px 22px;
+  background: var(--artifact-background);
+}
+.card h4 { margin-top: 0; }
+
+.footer { border-top: 1px solid var(--artifact-border-light); padding: 30px 28px; text-align: center; color: var(--artifact-text-secondary); font-size: 13px; }
+.footer .brand-mark { display: inline-grid; vertical-align: middle; width: 22px; height: 22px; margin-right: 6px; }
+.footer .brand-mark svg { width: 14px; height: 14px; }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .toc { display: none; }
+  .content { padding-top: 20px; }
+  .grid2 { grid-template-columns: 1fr; }
+}
+
+@media print {
+  body { margin: 0; padding: 0.4in 0.6in; background:#fff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .topbar, .toc { position: static !important; }
+  .toc, button, [role="button"] { display: none !important; }
+  .shell { grid-template-columns: 1fr !important; max-width:100% !important; }
+  section { break-inside: avoid; }
+  .card, pre, table, .callout, .whatsnew { break-inside: avoid; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 21.2 8 12 12.8 2.8 8 12 3.2Z" fill="#fff"/><path d="M2.8 12 12 16.8 21.2 12" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.8 16 12 20.8 21.2 16" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+    <span>Redis Discovery<small>User Guide</small></span>
+  </div>
+  <span class="pill">read-only inventory tool</span>
+</div>
+
+<div class="hero">
+  <div class="hero-inner">
+    <p class="eyebrow">Redis · Discovery &amp; Inventory</p>
+    <h1>Find every Redis-compatible database on your network.</h1>
+    <p class="lede">Redis Discovery is a read-only discovery and inventory tool for Redis-compatible databases. Scan authorized network ranges or known host lists, identify endpoints, collect inventory, and export results — from either the <code>rscan</code> CLI or a local Web UI.</p>
+    <div class="hero-meta">
+      <span class="chip"><b>CLI</b>&nbsp; rscan scan · credential-scan · serve</span>
+      <span class="chip"><b>Web UI</b>&nbsp; Discover · Results · Export</span>
+      <span class="chip"><b>Safe</b>&nbsp; no writes · no brute-force</span>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="toc" id="toc">
+    <div class="toc-label">On this page</div>
+    <a href="#overview">What Redis Discovery does</a>
+    <a href="#install">Installation &amp; build</a>
+    <a href="#cli">CLI overview</a>
+    <a href="#scan">rscan scan</a>
+    <a href="#credential-scan">rscan credential-scan</a>
+    <a href="#serve">rscan serve</a>
+    <a href="#webui">Web UI guide</a>
+    <a href="#discover">Discover page</a>
+    <a href="#credpage">Credential Scan page</a>
+    <a href="#results">Results page</a>
+    <a href="#exports">Exports</a>
+    <a href="#settings">Settings page</a>
+    <a href="#api">HTTP API reference</a>
+    <a href="#json">JSON result structure</a>
+    <a href="#docker">Docker</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+    <a href="#security">Security &amp; responsible use</a>
+    <a href="#workflows">Practical workflows</a>
+    <a href="#auth-states">Ref: authentication states</a>
+    <a href="#dup-detect">Ref: duplicate detection</a>
+    <a href="#defaults">Recommended defaults</a>
+    <a href="#limits">Limitations &amp; non-goals</a>
+  </nav>
+
+  <main class="content">
+
+    <div class="whatsnew">
+      <h3>
+        <svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" style="color:var(--artifact-primary-brand)"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        What's new
+      </h3>
+      <p style="margin:.2rem 0 .3rem;color:var(--artifact-text-secondary);font-size:14px">The newest capabilities at a glance — the rest of the guide covers everything in full detail.</p>
+      <ul>
+        <li>Credential Scan now accepts an <code>.ini</code> file, not just CSV — see <a href="#credential-scan">rscan credential-scan</a> and the Credential Scan page.</li>
+        <li>The Results page has a new <b>INI with credentials</b> button for re-attaching credentials to an export without retyping them — see <a href="#exports">Exports</a>.</li>
+        <li>CSV export is now a complete dump of every field the JSON API returns, not just what the results table shows.</li>
+        <li>The results table's Memory column shows used memory versus the configured maximum, not just used memory.</li>
+      </ul>
+    </div>
+
+    <section id="overview">
+      <p class="sec-num">01</p>
+      <h2>What Redis Discovery does</h2>
+      <p>Redis Discovery helps answer questions such as:</p>
+      <ul class="clean">
+        <li>Which Redis-compatible instances are reachable on this network?</li>
+        <li>Which hosts require authentication?</li>
+        <li>Which discovered endpoints are the same backing database reachable through multiple addresses?</li>
+        <li>What product / version / role / memory / keyspace / module / cluster / TLS certificate details are visible from a safe read-only probe?</li>
+        <li>Can I export the results for analysis or downstream tools such as <code>osstats</code>?</li>
+      </ul>
+      <h4>Safe by default</h4>
+      <ul class="clean">
+        <li>It performs TCP connection attempts against the targets and ports you specify.</li>
+        <li>On open ports it uses a short read-only Redis command sequence such as authentication, <code>PING</code>, <code>INFO</code>, <code>MODULE LIST</code>, and <code>CLUSTER INFO</code>.</li>
+        <li>It does not write data, change configuration, alter cluster state, or brute-force passwords.</li>
+        <li>Credentials are used only for the scan or request that needs them and are not persisted.</li>
+      </ul>
+      <div class="callout warn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p><b>Important:</b> Only scan networks, hosts, and Redis-compatible databases that you are authorized to test.</p>
+      </div>
+    </section>
+
+    <section id="install">
+      <p class="sec-num">02</p>
+      <h2>Installation and build</h2>
+      <h4>Prerequisites</h4>
+      <ul class="clean"><li>Node.js 22 or later</li><li>npm</li></ul>
+      <h4>Build from source</h4>
+      <pre><code>git clone https://github.com/bcooper-redis/redis-discovery.git
+cd redis-discovery
+npm install
+npm run build</code></pre>
+      <p>The build compiles TypeScript into <code>dist/</code> and copies the Web UI assets into <code>dist/web/public/</code>.</p>
+      <h4>Run without linking</h4>
+      <pre><code>node dist/cli/index.js --help</code></pre>
+      <h4>Install the local <code>rscan</code> command</h4>
+      <p>From the project directory:</p>
+      <pre><code>npm link
+rscan --help</code></pre>
+      <p>After linking, use <code>rscan</code> in the examples below.</p>
+    </section>
+
+    <section id="cli">
+      <p class="sec-num">03</p>
+      <h2>CLI overview</h2>
+      <p>The CLI has three main commands:</p>
+      <pre><code>rscan scan              <span class="c"># Scan CIDRs, IPs, or hostnames</span>
+rscan credential-scan   <span class="c"># Scan explicit host/port rows with per-row credentials</span>
+rscan serve             <span class="c"># Start the local Web UI</span></code></pre>
+      <p>You can inspect help at any time:</p>
+      <pre><code>rscan --help
+rscan scan --help
+rscan credential-scan --help
+rscan serve --help</code></pre>
+      <div class="callout">
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M12 16v-4M12 8h.01M12 22c5.5 0 10-4.5 10-10S17.5 2 12 2 2 6.5 2 12s4.5 10 10 10Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p>Progress and summaries are written to <b>stderr</b>; results are written to <b>stdout</b>. This lets you redirect or pipe result data without mixing in progress messages:
+        <br><code>rscan scan -c 10.0.0.0/24 --json &gt; results.json</code></p>
+      </div>
+    </section>
+
+    <section id="scan">
+      <p class="sec-num">04</p>
+      <h2>rscan scan</h2>
+      <p>Use <code>rscan scan</code> to discover Redis-compatible databases across one or more targets. Targets can be CIDR ranges, single IP addresses, or hostnames.</p>
+      <h4>Basic syntax</h4>
+      <pre><code>rscan scan [options]</code></pre>
+      <h4>Options</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-c, --cidr &lt;target&gt;</code></td><td>Auto-detected local subnets</td><td>Target to scan. Can be a CIDR, IP, or hostname. Repeat the flag for multiple targets. Hostnames resolve to IPv4/A records. Add <code>:port</code> to a target to scan that target on a specific port instead of the shared <code>--port</code> list.</td></tr>
+          <tr><td><code>-p, --port &lt;ports&gt;</code></td><td>6379</td><td>Ports to scan. Accepts a single port, comma-separated list, or ranges such as <code>6379,6380-6385</code>.</td></tr>
+          <tr><td><code>-t, --timeout &lt;ms&gt;</code></td><td>1000</td><td>Per-connection timeout in milliseconds. Values below 1 are coerced to at least 1. Invalid values fall back to 1000.</td></tr>
+          <tr><td><code>--concurrency &lt;n&gt;</code></td><td>100</td><td>Maximum number of concurrent connection attempts. Values below 1 are coerced to at least 1. Invalid values fall back to 100.</td></tr>
+          <tr><td><code>--tls</code></td><td>Off</td><td>Attempt TLS first. If the TLS handshake fails, Redis Discovery automatically falls back to a plain connection.</td></tr>
+          <tr><td><code>--tls-skip-verify</code></td><td>Off</td><td>Skip TLS certificate verification. Useful for self-signed certificates or private CAs during authorized testing.</td></tr>
+          <tr><td><code>--username &lt;user&gt;</code></td><td>None</td><td>ACL username. Requires <code>--password</code>.</td></tr>
+          <tr><td><code>--password &lt;pass&gt;</code></td><td>None</td><td>Password used only for this scan. It is not logged, printed, or persisted.</td></tr>
+          <tr><td><code>--json</code></td><td>Off</td><td>Print results as formatted JSON instead of a table.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>Target formats</h4>
+      <pre><code><span class="c"># CIDR range</span>
+rscan scan -c 10.0.0.0/24
+<span class="c"># Single IP</span>
+rscan scan -c 10.0.0.42/32
+<span class="c"># Hostname (resolved via DNS, IPv4/A records)</span>
+rscan scan -c redis-cache.internal.example.com
+<span class="c"># Multiple targets</span>
+rscan scan \
+  -c 10.0.0.0/24 \
+  -c 10.1.5.25/32 \
+  -c redis-cache.internal.example.com
+<span class="c"># Target-specific port</span>
+rscan scan \
+  -c redis-a.internal.example.com:6379 \
+  -c redis-b.internal.example.com:6380</code></pre>
+      <p>If a hostname resolves to multiple IPv4 addresses, every resolved address is scanned. When a target includes <code>:port</code>, that target is scanned only on that port instead of the shared <code>--port</code> setting.</p>
+      <p>If you omit <code>-c</code>, Redis Discovery auto-detects local non-loopback subnets, capped at a <code>/24</code> per interface. Use this carefully and only on networks you are authorized to scan.</p>
+
+      <h4>Port specifications</h4>
+      <pre><code>rscan scan -c 10.0.0.0/24                       <span class="c"># default port 6379</span>
+rscan scan -c 10.0.0.0/24 -p 6380              <span class="c"># one alternate port</span>
+rscan scan -c 10.0.0.0/24 -p 6379,6380,16379  <span class="c"># explicit list</span>
+rscan scan -c 10.0.0.0/24 -p 6379,6380-6385   <span class="c"># ranges</span></code></pre>
+
+      <h4>TLS examples</h4>
+      <pre><code><span class="c"># Try TLS first, fall back to plain</span>
+rscan scan -c 10.0.0.0/24 -p 6379,6380 --tls
+<span class="c"># TLS endpoints with self-signed certificates</span>
+rscan scan -c 10.0.0.0/24 -p 6380 --tls --tls-skip-verify</code></pre>
+
+      <h4>Authentication examples</h4>
+      <pre><code><span class="c"># Password-only Redis</span>
+rscan scan -c 10.0.0.0/24 -p 6379 --password 'correct-horse-battery-staple'
+<span class="c"># Redis ACL username and password</span>
+rscan scan \
+  -c 10.0.0.0/24 \
+  -p 6379 \
+  --username inventory-reader \
+  --password 'correct-horse-battery-staple'</code></pre>
+      <p><code>--username</code> requires <code>--password</code>. Supplying a username without a password is a usage error.</p>
+
+      <h4>JSON output</h4>
+      <pre><code>rscan scan -c 10.0.0.0/24 -p 6379,6380 --json &gt; redis-discovery-results.json</code></pre>
+      <p>Because progress goes to stderr and JSON goes to stdout, the redirected file contains only JSON.</p>
+
+      <h4>Table output</h4>
+      <p>Without <code>--json</code>, results are printed as a table:</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>HOST</td><td>Discovered host or IP address.</td></tr>
+          <tr><td>PORT</td><td>Discovered Redis-compatible port.</td></tr>
+          <tr><td>TLS</td><td>yes or no, based on how the endpoint was reached.</td></tr>
+          <tr><td>PRODUCT</td><td>Product family such as Redis OSS, Redis Enterprise, Valkey, KeyDB, or unknown.</td></tr>
+          <tr><td>VERSION</td><td>Redis-compatible server version, when available.</td></tr>
+          <tr><td>AUTH</td><td>Authentication state: open, required, authed, wrong pw, or error.</td></tr>
+          <tr><td>ROLE</td><td>Redis role, such as master, replica, or unknown, when inventory is available.</td></tr>
+          <tr><td>MEMORY</td><td>Used memory vs. max memory. <code>no limit</code> means maxmemory is unset.</td></tr>
+          <tr><td>LATENCY</td><td>Probe latency in milliseconds.</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code>HOST       PORT  TLS  PRODUCT    VERSION  AUTH      ROLE    MEMORY              LATENCY
+─────────  ────  ───  ─────────  ───────  ────────  ──────  ──────────────────  ───────
+10.0.0.12  6379  no   redis OSS  7.2.4    open      master  12.4 MB / no limit  4ms
+10.0.0.13  6380  yes  valkey     8.0.0    required  —       —                   9ms</code></pre>
+
+      <h4>Exit behavior</h4>
+      <p>A completed scan exits <code>0</code>, including the case where no Redis instances are found. Usage or input errors exit <code>1</code> — for example an invalid CIDR, invalid port specification, <code>--username</code> without <code>--password</code>, scan expansion above the safety cap, or no CIDR supplied and no local subnet detected.</p>
+
+      <h4>Common scan recipes</h4>
+      <pre><code>rscan scan -c 127.0.0.1/32                               <span class="c"># localhost only</span>
+rscan scan -c 192.168.1.0/24                             <span class="c"># subnet, default port</span>
+rscan scan -c 192.168.1.0/24 -p 6379,6380,6381,16379    <span class="c"># Redis + TLS + alternates</span>
+
+<span class="c"># Redis Enterprise-like env where a DB may appear on many endpoints</span>
+rscan scan -c 10.20.0.0/24 -p 12000-12050 --json &gt; redis-enterprise-scan.json
+<span class="c"># then group JSON results by inventory.runId to detect duplicate endpoints</span>
+
+<span class="c"># Clean JSON while watching progress; capture both separately</span>
+rscan scan -c 10.0.0.0/24 --json &gt; results.json
+rscan scan -c 10.0.0.0/24 --json &gt; results.json 2&gt; scan.log
+<span class="c"># Slower network timeout</span>
+rscan scan -c 10.0.0.0/16 -p 6379 -t 3000 --concurrency 200</code></pre>
+    </section>
+
+    <section id="credential-scan">
+      <p class="sec-num">05</p>
+      <h2>rscan credential-scan</h2>
+      <p>Use <code>rscan credential-scan</code> when you already have a known list of hosts and each host may have its own username/password. This differs from <code>rscan scan</code>, which applies one optional credential pair to all discovered endpoints.</p>
+      <h4>Basic syntax</h4>
+      <pre><code>rscan credential-scan -f known-hosts.csv [options]</code></pre>
+      <h4>Options</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>-f, --file &lt;path&gt;</code></td><td>Required</td><td>CSV file containing <code>host,port,username,password</code> (a header row is allowed and skipped automatically), or an <code>.ini</code> file in the same format Export INI produces. The format is chosen automatically from the file extension.</td></tr>
+          <tr><td><code>-t, --timeout &lt;ms&gt;</code></td><td>1000</td><td>Per-connection timeout in milliseconds.</td></tr>
+          <tr><td><code>--concurrency &lt;n&gt;</code></td><td>100</td><td>Maximum number of concurrent connection attempts.</td></tr>
+          <tr><td><code>--tls</code></td><td>Off</td><td>Attempt TLS first, with plain fallback on TLS handshake failure.</td></tr>
+          <tr><td><code>--tls-skip-verify</code></td><td>Off</td><td>Skip certificate verification for self-signed or privately issued certificates.</td></tr>
+          <tr><td><code>--json</code></td><td>Off</td><td>Print results as formatted JSON instead of a table.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>CSV format</h4>
+      <pre><code>host,port,username,password
+10.0.0.12,6379,,open-passwordless-probe
+10.0.0.13,6379,inventory_reader,s3cr3t
+10.0.0.14,6380,default,"p@ss,word"</code></pre>
+      <ul class="clean">
+        <li><code>host</code> is required; <code>port</code> must be valid.</li>
+        <li><code>username</code> may be blank; <code>password</code> may be blank — blank credentials mean the row is probed without attempting authentication.</li>
+        <li>If a password contains a comma, wrap it in double quotes.</li>
+        <li>Malformed rows are skipped with warnings on stderr; valid rows still run. If no valid rows remain, the command exits with an error.</li>
+      </ul>
+
+      <h4>INI input format</h4>
+      <p>You can also point <code>-f</code> at an <code>.ini</code> file in the exact format Export INI produces. This is meant for a round trip: run a scan, use Export INI to get a skeleton with host, port, and tls filled in, add username/password for the hosts you have credentials for, then feed that same file back in.</p>
+      <ul class="clean">
+        <li>One <code>[host:port]</code> section per target. The section header itself is not parsed — only the <code>host =</code> and <code>port =</code> lines inside it are.</li>
+        <li><code>username</code> and <code>password</code> may be blank, same meaning as a blank CSV field.</li>
+        <li>Lines starting with <code>;</code> or <code>#</code> are comments and are ignored, including the commented-out <code>ca_cert/client_cert/client_key</code> placeholders Export INI writes — this tool has no mTLS support.</li>
+        <li>Malformed sections are skipped with warnings on stderr, same as a malformed CSV row.</li>
+      </ul>
+
+      <h4>Credential scan examples</h4>
+      <pre><code>rscan credential-scan -f known-hosts.csv
+rscan credential-scan -f known-hosts.csv --json &gt; credential-scan-results.json
+
+<span class="c"># TLS and skip certificate verification</span>
+rscan credential-scan \
+  -f known-hosts.csv \
+  --tls \
+  --tls-skip-verify \
+  --json &gt; credential-scan-results.json
+
+<span class="c"># Tune timeout and concurrency for sensitive/slower endpoints</span>
+rscan credential-scan \
+  -f known-hosts.csv \
+  -t 3000 \
+  --concurrency 50</code></pre>
+
+      <div class="grid2">
+        <div class="card"><h4>Use <code>rscan scan</code> when…</h4><ul class="clean"><li>You need to discover unknown Redis-compatible endpoints.</li><li>You want to scan CIDRs, IPs, or hostnames.</li><li>You have zero credentials, or one pair that applies broadly.</li></ul></div>
+        <div class="card"><h4>Use <code>rscan credential-scan</code> when…</h4><ul class="clean"><li>You already have a host inventory.</li><li>Each host has its own username/password.</li><li>You want per-host authentication results in a single pass.</li></ul></div>
+      </div>
+    </section>
+
+    <section id="serve">
+      <p class="sec-num">06</p>
+      <h2>rscan serve</h2>
+      <p>Use <code>rscan serve</code> to start the local Web UI.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>--port &lt;port&gt;</code></td><td>3000</td><td>HTTP port for the Web UI.</td></tr>
+          <tr><td><code>--host &lt;host&gt;</code></td><td>localhost</td><td>Host/interface to bind.</td></tr>
+        </tbody>
+      </table></div>
+      <pre><code>rscan serve                          <span class="c"># open http://localhost:3000</span>
+rscan serve --port 8080              <span class="c"># open http://localhost:8080</span>
+rscan serve --host 0.0.0.0 --port 3000</code></pre>
+      <div class="callout warn">
+        <svg class="ic" viewBox="0 0 24 24" fill="none"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p>Only bind to <code>0.0.0.0</code> if you understand that the Web UI and its scan/authenticate endpoints may be reachable from your network. The Web UI does not provide its own access control.</p>
+      </div>
+    </section>
+
+    <section id="webui">
+      <p class="sec-num">07</p>
+      <h2>Web UI guide</h2>
+      <p>Start the UI with <code>rscan serve</code>, then open the printed URL (usually <code>http://localhost:3000</code>). The UI has five pages:</p>
+      <ul class="clean"><li>Discover</li><li>Credential Scan</li><li>Results</li><li>Settings</li><li>About</li></ul>
+      <p>Only one scan can run at a time. Starting another scan while one is scanning or paused returns a conflict until the current scan is finished or stopped.</p>
+    </section>
+
+    <section id="discover">
+      <p class="sec-num">08</p>
+      <h2>Discover page</h2>
+      <p>Use Discover to run a standard discovery scan. It is the UI equivalent of <code>rscan scan</code>.</p>
+      <h4>Targets field</h4>
+      <p>Enter one target per line. Supported formats:</p>
+      <pre><code>10.0.0.0/24
+192.168.1.50
+redis.example.com
+redis.example.com:6380
+10.0.0.0/24:6380</code></pre>
+      <ul class="clean">
+        <li>Blank target field means auto-detect local non-loopback subnets.</li>
+        <li>CIDRs, single IPs, and hostnames are supported; hostnames resolve through DNS and all resolved IPv4 addresses are scanned.</li>
+        <li>A target ending in <code>:port</code> is scanned only on that port instead of the shared Ports field.</li>
+      </ul>
+      <h4>Upload CSV button</h4>
+      <p>Populate the Targets field from a CSV file (<code>host</code> or <code>host,port</code>, header optional).</p>
+      <ul class="clean">
+        <li>The file is read in the browser — the raw file is not uploaded to the server.</li>
+        <li>Parsed targets replace the current Targets field; <code>host,port</code> rows convert to <code>host:port</code>.</li>
+        <li>The form applies the same timeout, concurrency, TLS options, and optional credentials to every target. For per-host credentials, use the Credential Scan page.</li>
+      </ul>
+      <h4>Ports, Timeout &amp; Concurrency</h4>
+      <ul class="clean">
+        <li><b>Ports</b> — shared port list for targets without their own <code>:port</code> (e.g. <code>6379,6380-6385</code>, <code>12000-12050</code>).</li>
+        <li><b>Timeout</b> — per-connection ms. Start at 1000 for nearby LANs; 2000–5000 for slower networks, VPNs, or firewalled paths. Very low values may miss live instances.</li>
+        <li><b>Concurrency</b> — max simultaneous attempts. 100 is a reasonable default; lower it for fragile networks or very large scans; raise cautiously for fast, trusted internal networks.</li>
+      </ul>
+      <h4>TLS &amp; certificate options</h4>
+      <ul class="clean">
+        <li><b>Attempt TLS first</b> — tries a TLS handshake before plain Redis; on failure it falls back to plain. Certificate details can be collected even when Redis-level auth is required.</li>
+        <li><b>Skip certificate verification</b> — does not reject self-signed or untrusted certificates. Use for self-signed certs, private CA deployments, and lab/test environments. Avoid when you need to validate trust chains.</li>
+      </ul>
+      <h4>Credentials section</h4>
+      <ul class="clean">
+        <li>Optional scan-wide Username (ACL) and Password, used for this scan only and applied to every target.</li>
+        <li>Credentials are not stored, logged, or persisted. Leave both blank to scan anonymously.</li>
+        <li>Use Credential Scan if each host has different credentials.</li>
+      </ul>
+      <p><b>Start Scan</b> begins the scan and navigates to Results. If a scan is already running or paused, the request is rejected until it finishes or is stopped.</p>
+    </section>
+
+    <section id="credpage">
+      <p class="sec-num">09</p>
+      <h2>Credential Scan page</h2>
+      <p>Use Credential Scan when you have a known host list and each row may have its own username/password.</p>
+      <h4>CSV or INI upload</h4>
+      <pre><code>host,port,username,password
+10.0.0.12,6379,,
+10.0.0.13,6379,inventory_reader,s3cr3t
+10.0.0.14,6380,default,"p@ss,word"</code></pre>
+      <ul class="clean">
+        <li>A header row is allowed; username and password may be blank for anonymous probing; comma-containing passwords must be double-quoted.</li>
+        <li>The file is parsed in the browser — the raw CSV is not uploaded; parsed values are sent when the scan starts. Each row's credentials are used only for that row.</li>
+        <li>You can also upload an <code>.ini</code> file — the same format Export INI produces. Iterate: run a scan, Export INI, fill in credentials in a text editor, then upload here. Format is chosen from the extension.</li>
+      </ul>
+      <p>Timeout and Concurrency behave as on the Discover page; the same TLS-first and skip-verify checkboxes apply. <b>Start Credential Scan</b> stays disabled until a valid CSV is loaded. Results appear on the shared Results page. Credential scans are not restartable from Results because per-row credentials are not retained.</p>
+    </section>
+
+    <section id="results">
+      <p class="sec-num">10</p>
+      <h2>Results page</h2>
+      <p>The Results page shows live scan state, controls, discovered inventory, duplicate detection, authentication actions, and exports.</p>
+      <h4>Banners &amp; status</h4>
+      <p>The <b>target banner</b> shows what is being scanned (with an <em>auto-detected</em> badge for local subnets). The <b>status banner</b> can show: <code>idle</code>, <code>scanning</code>, <code>paused</code>, <code>done</code>, <code>error</code>, <code>stopped</code>, plus progress and elapsed time while active.</p>
+      <h4>Scan controls</h4>
+      <ul class="clean">
+        <li><b>Pause</b> — stops scheduling new attempts; already-open connections finish naturally.</li>
+        <li><b>Resume</b> — continues a paused scan.</li>
+        <li><b>Stop</b> — stops immediately and keeps results found so far.</li>
+        <li><b>Restart</b> — re-runs the last Discover scan with the same non-sensitive options. Restarted scans run anonymously (credentials are never persisted); use per-row Authenticate afterward. Not shown after a Credential Scan.</li>
+        <li><b>Refresh</b> — refreshes displayed state and results.</li>
+      </ul>
+      <h4>Duplicate detection</h4>
+      <p>Redis Discovery detects likely duplicate endpoints when multiple results share the same Redis <code>run_id</code> — commonly when a Redis Enterprise database is reachable through multiple cluster-node proxy endpoints, or a local instance is found through multiple interfaces.</p>
+      <ul class="clean">
+        <li>A duplicate banner appears; <b>Hide duplicates</b> is checked by default.</li>
+        <li>Checked: each duplicate group collapses to a single representative row. Unchecked: every endpoint shows with duplicate indicators.</li>
+        <li>Export CSV/INI/XLSX follows the current duplicate setting.</li>
+        <li>CLI behavior differs: the CLI table always prints the full uncollapsed list plus a duplicate warning; JSON carries raw <code>runId</code> values so you can group them yourself.</li>
+      </ul>
+      <h4>Results table columns</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Host / Port</td><td>Host or IP address, and Redis-compatible port.</td></tr>
+          <tr><td>Product / Version</td><td>Product family (Redis OSS, Redis Enterprise, Valkey, KeyDB, unknown) and server version when available.</td></tr>
+          <tr><td>TLS</td><td>Whether the final successful probe used TLS.</td></tr>
+          <tr><td>Auth</td><td>Authentication state: open, required, authed, wrong password, or error-like states.</td></tr>
+          <tr><td>Role / Mode</td><td>Master, replica, or unknown; standalone, cluster, or sentinel when available.</td></tr>
+          <tr><td>Cluster / Replicas / Replicating From</td><td>Cluster state summary, connected replica count, and master host/port for replicas.</td></tr>
+          <tr><td>Memory / Keys</td><td>Used vs. configured max memory (no limit when unset), and key count summary.</td></tr>
+          <tr><td>Modules / OS / Uptime / Latency</td><td>Loaded module names, OS from Redis INFO, server uptime, probe latency.</td></tr>
+          <tr><td>Run ID</td><td>Redis run_id, used for same-database detection.</td></tr>
+          <tr><td>TLS Cert / Cert Expires</td><td>Certificate subject/issuer/trust summary and expiration for TLS endpoints.</td></tr>
+          <tr><td>Action</td><td>Authenticate button when applicable.</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Authenticate button</h4>
+      <p>Each row can offer an Authenticate action to provide credentials for one host after discovery. The dialog takes an optional ACL Username and a required Password. Submitting authenticates to that host and updates its row with full inventory on success. Credentials are used for that request only and are not retained for restart or future scans.</p>
+      <h4>TLS certificate info without Redis credentials</h4>
+      <p>For TLS endpoints, Redis Discovery can collect certificate metadata from the handshake even when Redis-level auth is required — Subject, Issuer, Valid from, Valid to, Self-signed status, Trust status, and SHA-256 fingerprint. This is often the only useful information for an auth-required TLS endpoint when you lack credentials.</p>
+    </section>
+
+    <section id="exports">
+      <p class="sec-num">11</p>
+      <h2>Exports</h2>
+      <p>The Results page supports three export formats. Every export respects the current Hide duplicates setting.</p>
+      <div class="grid2">
+        <div class="card"><h4>CSV export</h4><p>The most complete flat result set for spreadsheets, scripts, or ad hoc analysis. CSV is a complete dump of every field the JSON API returns — beyond the visible columns it includes whether auth was required, connected client count, max/peak/total system memory, full per-replica detail, full per-database keyspace detail, full per-module detail (version and path), full cluster info (enabled, slots assigned, known nodes, size), and the certificate's validFrom date and SHA-256 fingerprint.</p></div>
+        <div class="card"><h4>INI export</h4><p>An osstats-compatible <code>config.ini</code>. One <code>[host:port]</code> section per result with host, port, and tls filled in. username and password are left blank because Redis Discovery does not retain credentials.</p></div>
+      </div>
+      <h4>INI with credentials</h4>
+      <p>A second button next to Export INI for when you want the credentials back in the file. It warns that the resulting file contains plaintext credentials, then lets you pick a CSV or <code>.ini</code> file — typically one you already filled in from an earlier Export INI. Its username/password values are matched to the on-screen results by host and port and merged into a freshly generated INI.</p>
+      <ul class="clean">
+        <li>Entirely client-side: the file you pick, the matching, and the generated download all happen in the browser — no request is sent to the server.</li>
+        <li>The plain Export INI button and the HTTP API are unaffected — they still always return blank credentials.</li>
+        <li>Only entries matching a host:port in the current results get credentials filled in; everything else in the file is ignored.</li>
+      </ul>
+      <h4>XLSX export</h4>
+      <p>An Excel workbook shaped like osstats' <code>OSStats.xlsx</code> output. Sheet name <code>ClusterData</code>. Includes fields Redis Discovery can know from a single point-in-time probe; it does not fabricate throughput or command-stat deltas that require long-running sampling.</p>
+    </section>
+
+    <section id="settings">
+      <p class="sec-num">12</p>
+      <h2>Settings page</h2>
+      <p>Settings stores non-sensitive defaults that pre-fill the Discover page.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Setting</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Default ports</td><td>Default shared port list for Discover scans.</td></tr>
+          <tr><td>Default timeout (ms)</td><td>Default per-connection timeout.</td></tr>
+          <tr><td>Default concurrency</td><td>Default maximum concurrent connections.</td></tr>
+          <tr><td>Attempt TLS first</td><td>Default TLS-first setting.</td></tr>
+          <tr><td>Skip certificate verification</td><td>Default TLS certificate verification behavior.</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>Save Defaults</b> stores defaults in the browser; <b>Reset to Defaults</b> clears custom defaults and restores built-in ones. Defaults are stored only in the browser's localStorage and are not sent to the server until you start a scan. Credentials are not stored in Settings.</p>
+    </section>
+
+    <section id="api">
+      <p class="sec-num">13</p>
+      <h2>HTTP API quick reference</h2>
+      <p>The Web UI uses the local HTTP API exposed by <code>rscan serve</code>. You can also script against it.</p>
+      <h4>Start a standard scan</h4>
+      <pre><code>curl -sS -X POST http://localhost:3000/api/scan \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "cidrs": ["10.0.0.0/24"],
+    "ports": [6379, 6380],
+    "timeoutMs": 1000,
+    "concurrency": 100,
+    "tls": true,
+    "tlsSkipVerify": false
+  }'</code></pre>
+      <h4>Start a credential scan</h4>
+      <pre><code>curl -sS -X POST http://localhost:3000/api/credential-scan \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "targets": [
+      { "host": "10.0.0.12", "port": 6379, "username": "inventory_reader", "password": "s3cr3t" },
+      { "host": "10.0.0.13", "port": 6379 }
+    ],
+    "timeoutMs": 1000,
+    "concurrency": 100,
+    "tls": false,
+    "tlsSkipVerify": false
+  }'</code></pre>
+      <h4>Results &amp; scan control</h4>
+      <pre><code>curl -sS http://localhost:3000/api/results | jq .
+
+curl -sS -X POST http://localhost:3000/api/scan/pause
+curl -sS -X POST http://localhost:3000/api/scan/resume
+curl -sS -X POST http://localhost:3000/api/scan/stop
+curl -sS -X POST http://localhost:3000/api/scan/restart</code></pre>
+      <h4>Authenticate one host and update inventory</h4>
+      <pre><code>curl -sS -X POST http://localhost:3000/api/inventory \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "host": "10.0.0.12",
+    "port": 6379,
+    "username": "inventory_reader",
+    "password": "s3cr3t"
+  }'</code></pre>
+      <h4>Export current results</h4>
+      <pre><code>curl -sS http://localhost:3000/api/export/csv  -o redis-discovery.csv
+curl -sS http://localhost:3000/api/export/ini  -o config.ini
+curl -sS http://localhost:3000/api/export/xlsx -o OSStats-like.xlsx
+
+<span class="c"># Export with duplicates collapsed</span>
+curl -sS 'http://localhost:3000/api/export/csv?excludeDuplicates=true'  -o redis-discovery-deduped.csv
+curl -sS 'http://localhost:3000/api/export/ini?excludeDuplicates=true'  -o config-deduped.ini
+curl -sS 'http://localhost:3000/api/export/xlsx?excludeDuplicates=true' -o redis-discovery-deduped.xlsx</code></pre>
+    </section>
+
+    <section id="json">
+      <p class="sec-num">14</p>
+      <h2>JSON result structure</h2>
+      <p><code>--json</code> and <code>/api/results</code> expose structured discovery results.</p>
+      <h4>Top-level result fields</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>host</code> / <code>port</code></td><td>Host or IP address and port number.</td></tr>
+          <tr><td><code>tls</code></td><td>Whether TLS was used.</td></tr>
+          <tr><td><code>product</code></td><td>Product identifier: redis, valkey, keydb, enterprise, or unknown.</td></tr>
+          <tr><td><code>version</code></td><td>Server version, when known.</td></tr>
+          <tr><td><code>authRequired</code></td><td>Whether Redis-level auth is required.</td></tr>
+          <tr><td><code>anonymousStatus</code></td><td>Anonymous probe status: open, auth_required, unreachable, or error.</td></tr>
+          <tr><td><code>authenticatedStatus</code></td><td>Auth attempt status: authenticated, auth_failed, or not_attempted.</td></tr>
+          <tr><td><code>latency</code></td><td>Probe latency in milliseconds.</td></tr>
+          <tr><td><code>inventory</code></td><td>Full inventory object when available; null when it could not be collected.</td></tr>
+          <tr><td><code>tlsCertificate</code></td><td>TLS certificate object for TLS endpoints, or null for plaintext.</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Inventory fields</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>redisVersion</code></td><td>Version reported by Redis INFO.</td></tr>
+          <tr><td><code>mode</code></td><td>standalone, cluster, or sentinel.</td></tr>
+          <tr><td><code>os</code> / <code>uptimeSeconds</code></td><td>OS reported by Redis INFO; uptime in seconds.</td></tr>
+          <tr><td><code>role</code> / <code>replication</code></td><td>master, replica, or unknown; replica/master relationship details.</td></tr>
+          <tr><td><code>memory</code></td><td>Used/max/peak/system memory and eviction policy.</td></tr>
+          <tr><td><code>keyspace</code></td><td>Per-database key and expiry counts.</td></tr>
+          <tr><td><code>modules</code></td><td>Loaded modules with name/version/path.</td></tr>
+          <tr><td><code>clusterInfo</code></td><td>Cluster state, slot, and node details when available.</td></tr>
+          <tr><td><code>runId</code></td><td>Redis run_id, useful for duplicate detection.</td></tr>
+          <tr><td><code>connectedClients</code></td><td>Connected client count, when available.</td></tr>
+        </tbody>
+      </table></div>
+      <h4>TLS certificate fields</h4>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>subject</code> / <code>issuer</code></td><td>Certificate subject and issuer.</td></tr>
+          <tr><td><code>validFrom</code> / <code>validTo</code></td><td>Start and end of validity period.</td></tr>
+          <tr><td><code>selfSigned</code></td><td>Whether subject and issuer match.</td></tr>
+          <tr><td><code>trusted</code></td><td>Whether the chain validated against Node.js's CA store.</td></tr>
+          <tr><td><code>fingerprint256</code></td><td>SHA-256 fingerprint.</td></tr>
+        </tbody>
+      </table></div>
+      <h4>Example jq queries</h4>
+      <pre><code><span class="c"># List discovered endpoints</span>
+jq -r '.[] | "\(.host):\(.port) tls=\(.tls) product=\(.product) auth=\(.anonymousStatus)"' results.json
+<span class="c"># Show endpoints requiring auth</span>
+jq -r '.[] | select(.authRequired == true) | "\(.host):\(.port)"' results.json
+<span class="c"># Group by run_id to find likely duplicate endpoints</span>
+jq -r '
+  group_by(.inventory.runId // "")[]
+  | select(length > 1 and .[0].inventory.runId != null)
+  | "runId=\(.[0].inventory.runId) endpoints=\([.[] | "\(.host):\(.port)"] | join(","))"
+' results.json
+<span class="c"># Show TLS certificate expirations</span>
+jq -r '.[] | select(.tlsCertificate != null) | "\(.host):\(.port) expires=\(.tlsCertificate.validTo) trusted=\(.tlsCertificate.trusted)"' results.json</code></pre>
+    </section>
+
+    <section id="docker">
+      <p class="sec-num">15</p>
+      <h2>Docker</h2>
+      <pre><code><span class="c"># Build the image</span>
+docker build -t redis-discovery .
+<span class="c"># Run the Web UI (open http://localhost:3000)</span>
+docker run --rm -p 3000:3000 redis-discovery
+<span class="c"># Run a one-shot scan</span>
+docker run --rm redis-discovery scan -c 10.0.0.0/24 -p 6379,6380</code></pre>
+      <p>The container image runs the Web UI by default using <code>serve --host 0.0.0.0 --port 3000</code> so the UI is reachable through the published Docker port.</p>
+      <h4>Docker networking caveats</h4>
+      <ul class="clean">
+        <li><code>127.0.0.1</code> inside the container is the container, not your host.</li>
+        <li>Auto-detected subnets may be Docker bridge networks, not your LAN.</li>
+        <li>Explicit external CIDRs usually work through Docker's outbound NAT.</li>
+      </ul>
+      <pre><code><span class="c"># On Linux, use host networking to see the host network namespace</span>
+docker run --rm --network host redis-discovery scan -p 6379</code></pre>
+      <p>To reach a service on the host without host networking, use <code>host.docker.internal</code> where supported, but resolve it to an IP first because scan targets are CIDR/IP/hostname forms.</p>
+    </section>
+
+    <section id="troubleshooting">
+      <p class="sec-num">16</p>
+      <h2>Troubleshooting</h2>
+      <h4>No Redis instances found</h4>
+      <p>Possible causes: wrong target range, wrong port list, firewall or routing block, timeout too short, or Redis not listening on the scanned interface. Try:</p>
+      <pre><code>rscan scan -c 10.0.0.0/24 -p 6379,6380 -t 3000
+nc -zv 10.0.0.12 6379</code></pre>
+      <h4>Live Redis reports as not Redis</h4>
+      <p>Possible causes: a non-Redis service on that port, a restrictive ACL preventing required read-only commands, or a proxy/gateway returning unexpected protocol data. Confirm the account can run at least the inventory commands needed for discovery.</p>
+      <h4>Username without password error</h4>
+      <pre><code><span class="c"># Invalid</span>
+rscan scan -c 10.0.0.0/24 --username inventory_reader
+<span class="c"># Use</span>
+rscan scan -c 10.0.0.0/24 --username inventory_reader --password 's3cr3t'</code></pre>
+      <h4>Hostname cannot be resolved</h4>
+      <p>If any hostname target fails to resolve, the scan is rejected. Redis Discovery uses IPv4/A records for hostname expansion. Check:</p>
+      <pre><code>nslookup redis.example.com
+dig redis.example.com A</code></pre>
+      <h4>TLS scan falls back to plain unexpectedly</h4>
+      <p>A TLS handshake failure causes automatic plain fallback. Common causes: the port is not TLS-enabled, the certificate is untrusted and <code>--tls-skip-verify</code> was not used, or a middlebox/proxy interfered. Try:</p>
+      <pre><code>rscan scan -c redis.example.com:6380 --tls --tls-skip-verify</code></pre>
+      <h4>Scan target too large</h4>
+      <p>Redis Discovery enforces a host-count safety cap. Split large scans into smaller CIDRs:</p>
+      <pre><code>rscan scan -c 10.0.0.0/24
+rscan scan -c 10.0.1.0/24
+rscan scan -c 10.0.2.0/24</code></pre>
+      <h4>Web UI cannot reach the server</h4>
+      <pre><code>rscan serve --port 3000 --host localhost   <span class="c"># then open http://localhost:3000</span></code></pre>
+      <h4>Build cannot find HTMX assets</h4>
+      <pre><code>npm install
+npm run build</code></pre>
+    </section>
+
+    <section id="security">
+      <p class="sec-num">17</p>
+      <h2>Security and responsible use</h2>
+      <p>Redis Discovery is intentionally read-only, but it is still a network scanner. Treat it accordingly.</p>
+      <ul class="clean">
+        <li>Get explicit authorization before scanning.</li>
+        <li>Prefer narrow CIDRs and explicit host lists.</li>
+        <li>Start with conservative concurrency on shared networks.</li>
+        <li>Avoid putting passwords directly in shell history when possible.</li>
+        <li>Do not expose the Web UI broadly without an external access-control layer.</li>
+        <li>Use <code>--tls-skip-verify</code> only when you intentionally accept untrusted/self-signed certificates.</li>
+      </ul>
+      <h4>Safer credential handling</h4>
+      <pre><code><span class="c"># Avoid typing the password literally into shell history</span>
+read -s REDIS_PASSWORD
+rscan scan -c 10.0.0.0/24 --username inventory_reader --password "$REDIS_PASSWORD"
+unset REDIS_PASSWORD
+
+<span class="c"># For credential CSV files</span>
+chmod 600 known-hosts.csv
+rscan credential-scan -f known-hosts.csv --json &gt; results.json</code></pre>
+    </section>
+
+    <section id="workflows">
+      <p class="sec-num">18</p>
+      <h2>Practical workflows</h2>
+      <h4>A — Quick local discovery</h4>
+      <pre><code>rscan scan   <span class="c"># auto-detect local subnets on an authorized network</span></code></pre>
+      <h4>B — Controlled subnet discovery with JSON artifact</h4>
+      <pre><code>rscan scan \
+  -c 10.30.4.0/24 \
+  -p 6379,6380-6385 \
+  -t 2000 \
+  --concurrency 100 \
+  --json &gt; redis-discovery-10.30.4.json</code></pre>
+      <h4>C — TLS inventory with self-signed certificates</h4>
+      <pre><code>rscan scan \
+  -c 10.30.4.0/24 \
+  -p 6380 \
+  --tls \
+  --tls-skip-verify \
+  --json &gt; redis-tls-inventory.json</code></pre>
+      <h4>D — Known hosts with per-host credentials</h4>
+      <pre><code><span class="c"># known-hosts.csv</span>
+host,port,username,password
+10.30.4.12,6379,inventory_reader,s3cr3t1
+10.30.4.13,6379,inventory_reader,s3cr3t2
+10.30.4.14,6380,default,"p@ss,with,commas"
+
+chmod 600 known-hosts.csv
+rscan credential-scan -f known-hosts.csv --json &gt; credentialed-inventory.json</code></pre>
+      <h4>E — UI-assisted discovery and export</h4>
+      <pre><code>rscan serve</code></pre>
+      <p>Then: open <code>http://localhost:3000</code> → Discover → enter targets and ports → choose TLS options → Start Scan → review duplicates on Results → Authenticate individual rows if needed → Export CSV, INI, or XLSX.</p>
+      <h4>F — Generate an osstats-compatible INI</h4>
+      <p>Run a UI scan (or start one via the API), review Results, leave Hide duplicates checked for one endpoint per detected backing database, then click INI export. Or via API:</p>
+      <pre><code>curl -sS 'http://localhost:3000/api/export/ini?excludeDuplicates=true' -o config.ini</code></pre>
+      <h4>G — Iterating on a batch of credentials</h4>
+      <ul class="clean">
+        <li>Run a scan (Discover, or Credential Scan with whatever credentials you have) and open Results.</li>
+        <li>Click Export INI for a skeleton with host/port/tls filled in, or re-export with <b>INI with credentials</b> to keep credentials you already tried.</li>
+        <li>Fill in username/password for a batch of hosts in a text editor, then run <code>rscan credential-scan -f that-file.ini</code> (or upload it on the Credential Scan page).</li>
+        <li>Review the Auth column — authed rows are done; wrong pw or required rows still need attention.</li>
+        <li>Click INI with credentials, pick that same file, and you get a fresh INI with your credentials still there — edit just the rows that failed. Repeat until everything you have credentials for shows authed.</li>
+      </ul>
+    </section>
+
+    <section id="auth-states">
+      <p class="sec-num">19</p>
+      <h2>Field reference: authentication states</h2>
+      <p>The table and JSON expose two related concepts: <b>Anonymous status</b> (what happened when probing without credentials, or before supplied credentials) and <b>Authenticated status</b> (what happened when credentials were supplied).</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>AUTH value</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>open</code></td><td>Endpoint allowed inventory without authentication.</td></tr>
+          <tr><td><code>required</code></td><td>Redis-level authentication is required and no successful credentials were used.</td></tr>
+          <tr><td><code>authed</code></td><td>Authentication succeeded and inventory could be collected.</td></tr>
+          <tr><td><code>wrong pw</code></td><td>Authentication was attempted but failed.</td></tr>
+          <tr><td><code>error</code></td><td>Probe resulted in an error state.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="dup-detect">
+      <p class="sec-num">20</p>
+      <h2>Field reference: duplicate detection</h2>
+      <p>Redis <code>run_id</code> identifies a running Redis server process. Redis Discovery uses it to identify likely duplicate endpoints.</p>
+      <pre><code>[
+  { "host": "10.0.0.11", "port": 12000, "inventory": { "runId": "abc123" } },
+  { "host": "10.0.0.12", "port": 12000, "inventory": { "runId": "abc123" } }
+]</code></pre>
+      <p>These rows likely represent the same running database reachable through two endpoints.</p>
+      <ul class="clean">
+        <li><b>In the UI</b> — Hide duplicates checked: one representative row remains. Unchecked: all endpoints remain visible.</li>
+        <li><b>In the CLI</b> — table output shows all rows and prints a duplicate warning; JSON output includes all rows and the raw <code>runId</code> values.</li>
+      </ul>
+    </section>
+
+    <section id="defaults">
+      <p class="sec-num">21</p>
+      <h2>Recommended defaults</h2>
+      <pre><code><span class="c"># Most authorized LAN scans</span>
+rscan scan -c 10.0.0.0/24 -p 6379,6380 -t 1000 --concurrency 100
+<span class="c"># Slower or more sensitive networks</span>
+rscan scan -c 10.0.0.0/24 -p 6379,6380 -t 3000 --concurrency 25
+<span class="c"># TLS-heavy environments</span>
+rscan scan -c 10.0.0.0/24 -p 6380 --tls --tls-skip-verify
+<span class="c"># Audit/export workflows</span>
+rscan scan -c 10.0.0.0/24 -p 6379,6380 --json &gt; redis-discovery-results.json</code></pre>
+    </section>
+
+    <section id="limits">
+      <p class="sec-num">22</p>
+      <h2>Limitations and non-goals</h2>
+      <p>Redis Discovery is a point-in-time discovery and inventory tool. It does <b>not</b>:</p>
+      <ul class="clean">
+        <li>Continuously monitor Redis endpoints.</li>
+        <li>Brute-force passwords.</li>
+        <li>Persist credentials.</li>
+        <li>Change Redis configuration or write data to Redis.</li>
+        <li>Fabricate performance counters that require long-running sampling.</li>
+        <li>Provide built-in authentication for the Web UI.</li>
+      </ul>
+      <p>Use it for safe discovery, inventory, credential validation, duplicate endpoint detection, and export — not for load testing, continuous observability, or unauthorized scanning.</p>
+    </section>
+
+  </main>
+</div>
+
+<div class="footer">
+  <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3.2 21.2 8 12 12.8 2.8 8 12 3.2Z" fill="#fff"/><path d="M2.8 12 12 16.8 21.2 12" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+  Redis Discovery User Guide · Read-only discovery &amp; inventory for Redis-compatible databases.
+</div>
+
+<script>
+  // Scrollspy for the sticky TOC
+  var links = Array.prototype.slice.call(document.querySelectorAll('#toc a'));
+  var sections = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  function onScroll(){
+    var pos = window.scrollY + 120;
+    var idx = 0;
+    for (var i=0;i<sections.length;i++){ if (sections[i] && sections[i].offsetTop <= pos) idx = i; }
+    links.forEach(function(l){ l.classList.remove('active'); });
+    if (links[idx]) links[idx].classList.add('active');
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+</script>
+
+<script>
+  window.GleanBridge.postMessage({
+    actionId: 'export-pdf',
+    type: 'glean-add-menu',
+    metadata: { label: 'Export as PDF', icon: 'export' }
+  });
+  window.GleanBridge.onMessage('action', function(data) {
+    if (data.actionId === 'export-pdf') window.print();
+  });
+</script>
+
+</body>
+</html>
