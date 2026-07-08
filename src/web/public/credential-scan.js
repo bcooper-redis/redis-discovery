@@ -150,6 +150,72 @@
     return { rows, errors };
   }
 
+  // Mirrors src/scanner/credentialIni.ts's parseCredentialIni — parses the
+  // exact format toIni() (src/export/index.ts) produces, so a scan's own
+  // Export INI output can be filled in with credentials and re-uploaded
+  // here. The section header ([host:port]) is never parsed for host/port —
+  // only the explicit host = / port = lines inside it are, same as the TS
+  // side. Error messages only ever reference host/port — never
+  // username/password.
+  function parseCredentialIni(text) {
+    const lines = text.split(/\r\n|\r|\n/);
+
+    const rows = [];
+    const errors = [];
+
+    let sectionNum = 0;
+    let inSection = false;
+    let host, port, username, password;
+
+    function finalizeSection() {
+      if (!inSection) return;
+      sectionNum++;
+      if (!host) {
+        errors.push(`section ${sectionNum}: missing host`);
+      } else {
+        const portNum = Number(port);
+        if (!port || !Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+          errors.push(`section ${sectionNum} (${host}): invalid port "${port || ''}"`);
+        } else {
+          rows.push({
+            host,
+            port: portNum,
+            username: username || undefined,
+            password: password || undefined,
+          });
+        }
+      }
+      inSection = false;
+      host = port = username = password = undefined;
+    }
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith(';') || line.startsWith('#')) continue;
+
+      if (line.startsWith('[') && line.endsWith(']')) {
+        finalizeSection();
+        inSection = true;
+        continue;
+      }
+
+      if (!inSection) continue;
+
+      const eq = line.indexOf('=');
+      if (eq === -1) continue;
+      const key = line.slice(0, eq).trim().toLowerCase();
+      const value = line.slice(eq + 1).trim();
+
+      if (key === 'host') host = value;
+      else if (key === 'port') port = value;
+      else if (key === 'username') username = value;
+      else if (key === 'password') password = value;
+    }
+    finalizeSection();
+
+    return { rows, errors };
+  }
+
   csvUpload.addEventListener('change', () => {
     const file = csvUpload.files[0];
     csvUploadStatus.textContent = '';
@@ -158,9 +224,11 @@
     submitBtn.disabled = true;
     if (!file) return;
 
+    const isIni = /\.ini$/i.test(file.name);
     const reader = new FileReader();
     reader.onload = () => {
-      const { rows, errors } = parseCredentialCsv(String(reader.result || ''));
+      const text = String(reader.result || '');
+      const { rows, errors } = isIni ? parseCredentialIni(text) : parseCredentialCsv(text);
       csvUpload.value = ''; // lets re-uploading the same filename fire 'change' again
 
       if (rows.length === 0) {

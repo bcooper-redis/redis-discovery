@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { credentialScan } from '../inventory/credentialScan';
 import type { CredentialScanOptions } from '../inventory/credentialScan';
 import { parseCredentialCsv } from '../scanner/credentialCsv';
+import { parseCredentialIni } from '../scanner/credentialIni';
 import { formatTable, formatJson } from './format';
 import { clearLine, writeProgress } from './progress';
 
@@ -19,11 +20,13 @@ export function registerCredentialScan(program: Command): void {
   program
     .command('credential-scan')
     .description(
-      'Scan a known list of hosts from a CSV file, authenticating each with its own username/password',
+      'Scan a known list of hosts from a CSV or INI file, authenticating each with its own username/password',
     )
     .requiredOption(
       '-f, --file <path>',
-      'CSV file: host,port,username,password — username and password may be blank (a header row is skipped automatically)',
+      'CSV file (host,port,username,password — username and password may be blank; a header row ' +
+        'is skipped automatically) or .ini file in the same format Export INI produces (fill in ' +
+        'the blank username/password fields first). Format is chosen by file extension.',
     )
     .option('-t, --timeout <ms>', 'connection timeout in milliseconds', '1000')
     .option('--concurrency <n>', 'max concurrent connections', '100')
@@ -31,20 +34,23 @@ export function registerCredentialScan(program: Command): void {
     .option('--tls-skip-verify', 'skip TLS certificate verification (self-signed certs)', false)
     .option('--json', 'output results as JSON', false)
     .action(async (opts: CredentialScanOpts) => {
-      let csvText: string;
+      let fileText: string;
       try {
-        csvText = fs.readFileSync(opts.file, 'utf8');
+        fileText = fs.readFileSync(opts.file, 'utf8');
       } catch (e) {
         process.stderr.write(`Error: could not read ${opts.file}: ${(e as Error).message}\n`);
         process.exit(1);
       }
 
-      const { rows, errors } = parseCredentialCsv(csvText);
+      const isIni = opts.file.toLowerCase().endsWith('.ini');
+      const { rows, errors } = isIni ? parseCredentialIni(fileText) : parseCredentialCsv(fileText);
       for (const err of errors) {
         process.stderr.write(`Warning: ${err}\n`);
       }
       if (rows.length === 0) {
-        process.stderr.write('Error: no valid targets found in the CSV file.\n');
+        process.stderr.write(
+          `Error: no valid targets found in the ${isIni ? 'INI' : 'CSV'} file.\n`,
+        );
         process.exit(1);
       }
 
