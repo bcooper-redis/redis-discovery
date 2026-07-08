@@ -12,7 +12,11 @@ export type { AppState };
 
 export function createApp(state: AppState = createState()): express.Application {
   const app = express();
-  app.use(express.json());
+  // Default (100kb) is comfortably enough for a normal scan request, but a
+  // Credential Scan's body is a full host/port/username/password list —
+  // raise the ceiling so a few thousand rows doesn't hit a 413 for what's
+  // still a perfectly reasonable known-hosts CSV.
+  app.use(express.json({ limit: '5mb' }));
   app.use((_req, res, next) => {
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();

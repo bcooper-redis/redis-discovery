@@ -1,6 +1,8 @@
 import { spawnSync, spawn, execSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import type { ScanState } from '../../src/web/state';
 
 const ROOT = path.resolve(__dirname, '../..');
@@ -27,11 +29,27 @@ async function waitForServer(url: string, maxMs: number): Promise<void> {
 
 const REDIS_8_PORT = process.env.REDIS_8_PORT ?? '6379';
 const VALKEY_PORT = process.env.VALKEY_PORT ?? '6380';
+const REDIS_AUTH_PORT = process.env.REDIS_AUTH_PORT ?? null;
+const REDIS_AUTH_PASSWORD = process.env.REDIS_AUTH_PASSWORD ?? 'testpassword';
+const describeIf = (condition: boolean) => (condition ? describe : describe.skip);
+
+let tmpFiles: string[] = [];
+function writeTempCsv(content: string): string {
+  const file = path.join(os.tmpdir(), `rscan-credential-test-${Date.now()}-${Math.random().toString(36).slice(2)}.csv`);
+  fs.writeFileSync(file, content);
+  tmpFiles.push(file);
+  return file;
+}
 
 describe('rscan CLI', () => {
   beforeAll(() => {
     execSync('npm run build', { cwd: ROOT, stdio: 'pipe' });
   }, 30000);
+
+  afterEach(() => {
+    for (const file of tmpFiles) fs.rmSync(file, { force: true });
+    tmpFiles = [];
+  });
 
   describe('rscan --help', () => {
     it('lists scan and serve subcommands', () => {
@@ -153,6 +171,95 @@ describe('rscan CLI', () => {
       const { status, stderr } = rscan('scan', '-c', '0.0.0.0/8', '-p', '6379');
       expect(status).toBe(1);
       expect(stderr).toContain('too large');
+    });
+  });
+
+  describe('rscan credential-scan --help', () => {
+    it('shows credential-scan options', () => {
+      const { stdout, status } = rscan('credential-scan', '--help');
+      expect(status).toBe(0);
+      expect(stdout).toContain('--file');
+      expect(stdout).toContain('--tls');
+      expect(stdout).toContain('--json');
+    });
+  });
+
+  describe('rscan credential-scan', () => {
+    it('finds Redis 8.x from a CSV with a blank username/password (no auth attempted)', () => {
+      const file = writeTempCsv(`host,port,username,password\n127.0.0.1,${REDIS_8_PORT},,\n`);
+      const { stdout, status } = rscan('credential-scan', '-f', file, '--json');
+      expect(status).toBe(0);
+      const [r] = JSON.parse(stdout);
+      expect(r.host).toBe('127.0.0.1');
+      expect(r.port).toBe(parseInt(REDIS_8_PORT, 10));
+      expect(r.product).toBe('redis');
+      expect(r.authenticatedStatus).toBe('not_attempted');
+    });
+
+    it('table output looks like a normal scan table', () => {
+      const file = writeTempCsv(`127.0.0.1,${REDIS_8_PORT},,\n`);
+      const { stdout, status } = rscan('credential-scan', '-f', file);
+      expect(status).toBe(0);
+      expect(stdout).toContain('redis OSS');
+      expect(stdout).toContain('127.0.0.1');
+      expect(stdout).toContain(REDIS_8_PORT);
+    });
+
+    it('scans multiple CSV rows in one pass', () => {
+      const file = writeTempCsv(
+        `127.0.0.1,${REDIS_8_PORT},,\n127.0.0.1,${VALKEY_PORT},,\n`,
+      );
+      const { stdout } = rscan('credential-scan', '-f', file, '--json');
+      const results = JSON.parse(stdout);
+      expect(results).toHaveLength(2);
+      expect(results.some((r: { product: string }) => r.product === 'redis')).toBe(true);
+      expect(results.some((r: { product: string }) => r.product === 'valkey')).toBe(true);
+    });
+
+    it('exits 1 when --file is omitted', () => {
+      const { status, stderr } = rscan('credential-scan');
+      expect(status).toBe(1);
+      expect(stderr).toContain('--file');
+    });
+
+    it('exits 1 when the file does not exist', () => {
+      const { status, stderr } = rscan('credential-scan', '-f', '/nonexistent/path.csv');
+      expect(status).toBe(1);
+      expect(stderr).toContain('could not read');
+    });
+
+    it('exits 1 when the CSV has no valid rows, and never echoes password content in the error', () => {
+      const file = writeTempCsv('host,port,username,password\n,6379,someuser,supersecretpw\n');
+      const { status, stderr } = rscan('credential-scan', '-f', file);
+      expect(status).toBe(1);
+      expect(stderr).toContain('no valid targets');
+      expect(stderr).not.toContain('supersecretpw');
+    });
+
+    it('warns about (but does not fail on) a malformed row alongside a valid one', () => {
+      const file = writeTempCsv(`127.0.0.1,${REDIS_8_PORT},,\n,6380,,\n`);
+      const { stdout, stderr, status } = rscan('credential-scan', '-f', file, '--json');
+      expect(status).toBe(0);
+      expect(stderr).toContain('missing host');
+      expect(JSON.parse(stdout)).toHaveLength(1);
+    });
+
+    describeIf(REDIS_AUTH_PORT !== null)('against a real auth-required host', () => {
+      it('authenticates with the correct per-target password', () => {
+        const file = writeTempCsv(`127.0.0.1,${REDIS_AUTH_PORT},,${REDIS_AUTH_PASSWORD}\n`);
+        const { stdout, status } = rscan('credential-scan', '-f', file, '--json');
+        expect(status).toBe(0);
+        const [r] = JSON.parse(stdout);
+        expect(r.authenticatedStatus).toBe('authenticated');
+      });
+
+      it('reports auth_failed for the wrong per-target password', () => {
+        const file = writeTempCsv(`127.0.0.1,${REDIS_AUTH_PORT},,definitely-wrong\n`);
+        const { stdout, status } = rscan('credential-scan', '-f', file, '--json');
+        expect(status).toBe(0);
+        const [r] = JSON.parse(stdout);
+        expect(r.authenticatedStatus).toBe('auth_failed');
+      });
     });
   });
 

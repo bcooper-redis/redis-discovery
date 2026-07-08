@@ -146,6 +146,32 @@ export function dedupeByRunId(results: DiscoveryResult[]): DiscoveryResult[] {
   });
 }
 
+function compareHostPort(a: DiscoveryResult, b: DiscoveryResult): number {
+  return a.host.localeCompare(b.host) || a.port - b.port;
+}
+
+/**
+ * Sorts by host then port, except results that share a run_id (the same
+ * database reachable through more than one endpoint) are kept adjacent —
+ * clustered at the position of the earliest-sorting member of their group —
+ * instead of scattered wherever their own host happens to fall. Shared by
+ * every scan pipeline (discover(), credentialScan()) so results always read
+ * the same way regardless of how they were found.
+ */
+export function sortWithRunIdGrouping(results: DiscoveryResult[]): DiscoveryResult[] {
+  const groupAnchor = new Map<DiscoveryResult, DiscoveryResult>();
+  for (const group of findRunIdDuplicates(results)) {
+    const earliest = [...group].sort(compareHostPort)[0];
+    for (const r of group) groupAnchor.set(r, earliest);
+  }
+
+  return [...results].sort((a, b) => {
+    const anchorA = groupAnchor.get(a) ?? a;
+    const anchorB = groupAnchor.get(b) ?? b;
+    return compareHostPort(anchorA, anchorB) || compareHostPort(a, b);
+  });
+}
+
 export interface ScanConfig {
   cidrs: string[];
   ports: number[];

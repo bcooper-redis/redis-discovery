@@ -425,6 +425,112 @@ describe('POST /api/scan/pause, /resume, /stop, /restart', () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/credential-scan
+// ---------------------------------------------------------------------------
+
+describe('POST /api/credential-scan', () => {
+  it('returns 400 when targets is missing or empty', async () => {
+    const r1 = await fetch(`${server.url}/api/credential-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(r1.status).toBe(400);
+
+    const r2 = await fetch(`${server.url}/api/credential-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [] }),
+    });
+    expect(r2.status).toBe(400);
+  });
+
+  it('returns 400 identifying the bad row when a target is malformed', async () => {
+    const r = await fetch(`${server.url}/api/credential-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [{ host: '127.0.0.1', port: 6379 }, { host: '', port: 6380 }] }),
+    });
+    expect(r.status).toBe(400);
+    const body = (await r.json()) as { error: string };
+    expect(body.error).toContain('targets[1]');
+  });
+
+  it('returns 202, scans the given targets, and finds Redis 8.x anonymously', async () => {
+    const r = await fetch(`${server.url}/api/credential-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targets: [{ host: '127.0.0.1', port: REDIS_8_PORT }],
+        timeoutMs: 3000,
+      }),
+    });
+    expect(r.status).toBe(202);
+
+    const finalState = await poll(server.url);
+    expect(finalState.status).toBe('done');
+    expect(finalState.targets).toEqual([`127.0.0.1:${REDIS_8_PORT}`]);
+    expect(finalState.autoDetected).toBe(false);
+    expect(finalState.results[0]?.product).toBe('redis');
+  }, 20000);
+
+  it('returns 409 when a scan is already running', async () => {
+    await fetch(`${server.url}/api/credential-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [{ host: '127.0.0.1', port: REDIS_8_PORT }], timeoutMs: 3000 }),
+    });
+    const r = await fetch(`${server.url}/api/credential-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [{ host: '127.0.0.1', port: REDIS_8_PORT }] }),
+    });
+    expect(r.status).toBe(409);
+  });
+
+  it('is never restartable — /scan/restart returns 400 afterward, matching state.restartable:false', async () => {
+    await fetch(`${server.url}/api/credential-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets: [{ host: '127.0.0.1', port: REDIS_8_PORT }], timeoutMs: 3000 }),
+    });
+    const finalState = await poll(server.url);
+    expect(finalState.restartable).toBe(false);
+
+    const restartRes = await fetch(`${server.url}/api/scan/restart`, { method: 'POST' });
+    expect(restartRes.status).toBe(400);
+  }, 20000);
+
+  describeIf(REDIS_AUTH_PORT !== null)('against a real auth-required host', () => {
+    it('authenticates with the correct per-target password', async () => {
+      await fetch(`${server.url}/api/credential-scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targets: [{ host: '127.0.0.1', port: REDIS_AUTH_PORT, password: REDIS_AUTH_PASSWORD }],
+          timeoutMs: 3000,
+        }),
+      });
+      const finalState = await poll(server.url);
+      expect(finalState.results[0]?.authenticatedStatus).toBe('authenticated');
+    }, 20000);
+
+    it('reports auth_failed for the wrong per-target password', async () => {
+      await fetch(`${server.url}/api/credential-scan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targets: [{ host: '127.0.0.1', port: REDIS_AUTH_PORT, password: 'definitely-wrong' }],
+          timeoutMs: 3000,
+        }),
+      });
+      const finalState = await poll(server.url);
+      expect(finalState.results[0]?.authenticatedStatus).toBe('auth_failed');
+    }, 20000);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/authenticate
 // ---------------------------------------------------------------------------
 

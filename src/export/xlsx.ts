@@ -4,7 +4,6 @@ export type CellValue = string | number | null;
 
 /** Strips characters XML 1.0 forbids outright, even as numeric entities. */
 function sanitizeXmlText(s: string): string {
-  // eslint-disable-next-line no-control-regex
   return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
 }
 

@@ -7,7 +7,12 @@ export default tseslint.config(
   {
     languageOptions: {
       parserOptions: {
-        project: true,
+        // Plain `project: true` only auto-discovers tsconfig.json, which
+        // deliberately excludes test/ (so `tsc --noEmit` on the app itself
+        // doesn't type-check tests) — leaving every test file unmatched and
+        // silently unlinted. List both explicitly so test/**/*, covered only
+        // by tsconfig.test.json, actually gets parsed and linted too.
+        project: ['./tsconfig.json', './tsconfig.test.json'],
         tsconfigRootDir: import.meta.dirname,
       },
     },
@@ -15,7 +20,10 @@ export default tseslint.config(
   {
     rules: {
       'no-console': 'warn',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
   {

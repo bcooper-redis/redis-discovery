@@ -97,6 +97,25 @@ rscan scan -c 10.0.0.0/24 --json > results.json
 
 Exits `0` on a completed scan (including zero instances found) and `1` on a usage/input error (invalid CIDR, invalid port spec, `--username` without `--password`, or a CIDR range too large to scan — see [Troubleshooting](#troubleshooting)).
 
+### `rscan credential-scan`
+
+A different kind of scan: instead of sweeping a range and optionally authenticating with one shared credential, this scans an explicit list of known hosts from a CSV file, each with its **own** username/password. Useful when you already have an inventory of hosts (e.g. from a CMDB) and a credential per host, and want inventory plus per-host auth success/failure in one pass.
+
+| Flag | Default | Description |
+|---|---|---|
+| `-f, --file <path>` | — (required) | CSV file: `host,port,username,password` per line. `username`/`password` may be blank — that row is probed without attempting AUTH. A header row is fine and skipped automatically. If a password itself contains a comma, wrap that field in double quotes, e.g. `10.0.0.1,6379,,"p@ss,word"`. |
+| `-t, --timeout <ms>` | `1000` | Per-connection timeout in milliseconds |
+| `--concurrency <n>` | `100` | Max concurrent connection attempts |
+| `--tls` | off | Attempt TLS first; automatically falls back to plain on handshake failure |
+| `--tls-skip-verify` | off | Skip TLS certificate verification (needed for self-signed certs) |
+| `--json` | off | Print results as a JSON array instead of a table |
+
+```bash
+rscan credential-scan -f known-hosts.csv --json > results.json
+```
+
+A malformed row (missing host, invalid port) is skipped with a warning on stderr rather than failing the whole file; the rest of the CSV still runs. Every row's credentials exist only for the single connection attempt that uses them — nothing here is retained afterward, matching `rscan scan --password`'s handling.
+
 ### `rscan serve`
 
 | Flag | Default | Description |
@@ -112,17 +131,18 @@ The server is entirely local — it doesn't call out to any external service. Bi
 
 ## Web UI guide
 
-Open the address `rscan serve` prints (default `http://localhost:3000`). Four pages, linked from the top nav:
+Open the address `rscan serve` prints (default `http://localhost:3000`). Five pages, linked from the top nav:
 
 - **Dashboard** — configure and start a scan: targets (CIDR ranges, bare IPs, or hostnames, one per line — hostnames are resolved via DNS and every resolved address is scanned), ports, timeout, concurrency, TLS options, and optional credentials for this scan only. Any target line may end in `:port` (e.g. `redis.example.com:6380`, or `10.0.0.0/24:6380`) to scan just that target on that port instead of the shared Ports field. Submitting takes you to Results. Non-credential fields are remembered for the rest of the browser tab's session (via `sessionStorage`), so navigating to Results and back doesn't lose what you typed — closing the tab or browser clears it.
-  - **Upload CSV** — load targets from a CSV file instead of typing them: one target per line, `host` or `host,port` (a header row is skipped automatically). The file is read entirely in the browser and never uploaded to the server; it just replaces the Targets field, encoding each row with a port as `host:port` so that row is scanned on exactly its own port rather than every port seen in the file. It applies the same Timeout/Concurrency/TLS/credentials fields to every target — there's no way yet to give individual targets their own credentials via the file.
+  - **Upload CSV** — load targets from a CSV file instead of typing them: one target per line, `host` or `host,port` (a header row is skipped automatically). The file is read entirely in the browser and never uploaded to the server; it just replaces the Targets field, encoding each row with a port as `host:port` so that row is scanned on exactly its own port rather than every port seen in the file. It applies the same Timeout/Concurrency/TLS/credentials fields to every target — there's no way to give individual targets their own credentials via this form; that's what Credential Scan (below) is for.
+- **Credential Scan** — a different kind of scan for a known list of hosts, each with its own username/password: upload a `host,port,username,password` CSV (the only way to supply targets here — `username`/`password` may be blank per row for an anonymous probe of that host) plus the same Timeout/Concurrency/TLS options as Dashboard, then submit. Like the Dashboard's CSV upload, the file is parsed entirely in the browser; only the resulting host/port/username/password values are sent when you start the scan, never the raw file. Results land on the same Results page below, with the same table and export options — this scan type isn't visually distinct there, only distinguishable by its results actually authenticating per-row instead of anonymously. **Restart doesn't apply to a Credential Scan** and won't appear on Results afterward — each row's password exists only for the single request that used it, so there's nothing to replay; re-upload the CSV to run it again.
 - **Results** — a target banner showing what's being (or was) scanned, live status and progress while a scan runs, then a table of discovered instances: host, port, product, version, TLS, auth status, role, mode, cluster state, connected replica count, what it's replicating from (for a replica), memory usage, key count, loaded modules, OS, uptime, latency, run ID, and TLS certificate + expiry. Each row has an **Authenticate** button that opens a dialog for that host's credentials — submitting re-probes with them and updates the row's inventory in place.
   - Below the table, **Export CSV**/**INI**/**XLSX** download the current (filtered, if "Hide duplicates" is checked — see below) results. **INI** produces a [config.ini](https://github.com/Redislabs-Solution-Architects/osstats) compatible with the `osstats` tool — one `[host:port]` section per result, pre-filled with `host`/`port`/`tls`; `username`/`password` are always left blank since Redis Scanner never retains credentials past the request that used them. **XLSX** produces a file shaped like osstats' own `OSStats.xlsx` output — same sheet name (`ClusterData`) and column layout for the fields Redis Scanner's single probe actually knows (`Source`, `NodeId`, `NodeRole`, `RedisVersion`, `OS`, memory figures, `ConnectedSlaves`, `CurrItems`, `Namespaces`, ...). osstats' own output is mostly throughput/command-stats columns (`Throughput (Ops)`, `GetTypeCmds`, `SetTypeCmds`, ...) computed by holding a connection open, sampling `INFO COMMANDSTATS` twice several minutes apart, and subtracting — Redis Scanner does one point-in-time probe and never fabricates numbers for what it didn't measure, so those columns are omitted entirely rather than filled with 0 or blank.
   - **TLS certificate info without credentials** — for any TLS target, the certificate's subject, issuer, expiry, and whether it's self-signed or CA-issued/trusted are read straight off the TLS handshake, independent of Redis-level auth. This is the one piece of real information available for a host that requires authentication you don't have — the "TLS Cert"/"Cert Expires" columns (and every other inventory column) still show `—` for that row, but the certificate columns don't, since the handshake already happened before AUTH was ever attempted.
   - **Same-database detection** — if two or more results report the same Run ID (Redis's own per-process identifier), that means the same database is reachable through more than one endpoint — for example, a Redis Enterprise database whose proxy answers on every cluster node, or (as happens on a machine with both Wi-Fi and Ethernet active on the same subnet) the same instance discovered via two of your own local addresses. A banner appears above the table with a **Hide duplicates** checkbox, **checked by default**, which collapses each such group down to a single representative row — this also strips the extra rows from Export CSV/INI/XLSX (as `&excludeDuplicates=true` on the underlying API calls). Uncheck it to see every endpoint each database was actually found at, with a "⚠ dup" badge and tooltip on each affected row's Run ID. The CLI table always prints the full, un-collapsed list plus the same warning below its output (no equivalent hide option there yet); CSV/JSON just carry the raw Run ID for each row so you can group them yourself.
   - **Pause** / **Resume** — freezes and resumes a running scan. Already-open connections finish naturally; nothing new starts until you resume.
   - **Stop** — ends the scan immediately, keeping whatever results were found so far.
-  - **Restart** — re-runs the last scan's exact targets and options. Credentials are never persisted, so a restarted scan always runs anonymously — re-authenticate per host with the Authenticate button if needed.
+  - **Restart** — re-runs the last scan's exact targets and options. Credentials are never persisted, so a restarted scan always runs anonymously — re-authenticate per host with the Authenticate button if needed. Not shown at all after a Credential Scan (see above) — its per-target passwords are never retained, so there's nothing to restart.
 - **Settings** — non-sensitive scan defaults (ports, timeout, concurrency, TLS options) that pre-fill the Dashboard form. These are stored only in your browser's `localStorage` and are never sent anywhere until you actually start a scan. Credentials are never stored here or anywhere else.
 - **About** — a summary of the tool's principles and non-goals.
 
@@ -135,6 +155,7 @@ Only one scan runs at a time; starting a new one while another is in progress (s
 | Method & path | Purpose |
 |---|---|
 | `POST /api/scan` | Start a scan. Body: `{ cidrs?, ports?, timeoutMs?, concurrency?, tls?, tlsSkipVerify?, username?, password? }`. Returns `202` or `409` if one's already running or paused. |
+| `POST /api/credential-scan` | Start a Credential Scan: an explicit, known-host list instead of a range, each target with its own credentials. Body: `{ targets: [{ host, port, username?, password? }, ...], timeoutMs?, concurrency?, tls?, tlsSkipVerify? }`. Same `202`/`409` semantics as `/api/scan`, plus `400` if `targets` is missing/empty or any entry has a bad host/port. Results land in the same shared state as a regular scan. |
 | `POST /api/scan/pause` | Pause the running scan. `409` if none is running. |
 | `POST /api/scan/resume` | Resume a paused scan. `409` if none is paused. |
 | `POST /api/scan/stop` | Stop the running or paused scan, keeping results found so far. `409` if neither. |

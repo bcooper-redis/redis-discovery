@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { discover } from '../../inventory/discover';
+import { credentialScan } from '../../inventory/credentialScan';
+import type { CredentialTarget } from '../../inventory/credentialScan';
 import { expandPorts } from '../../scanner/ports';
 import { detectLocalCidrs, assertScanSize } from '../../scanner/cidr';
 import { createScanController } from '../../scanner/control';
@@ -120,6 +122,122 @@ scanRouter.post('/scan', (req, res) => {
 
   // Runs in background — the caller polls GET /api/results
   launchScan(state, config, cidrs, autoDetected, credentials);
+
+  res.status(202).json({ status: 'scanning' });
+});
+
+/**
+ * Same background-launch/generation-gating pattern as launchScan(), but for
+ * a Credential Scan: config is null (see AppState.startScan) so there's
+ * nothing for /scan/restart to replay — each target's credentials only ever
+ * exist for the duration of this one call.
+ */
+function launchCredentialScan(
+  state: AppState,
+  targets: CredentialTarget[],
+  timeoutMs: number,
+  concurrency: number,
+  tls: boolean,
+  tlsSkipVerify: boolean,
+): void {
+  const controller = createScanController();
+  const targetLabels = targets.map((t) => `${t.host}:${t.port}`);
+  const generation = state.startScan(targetLabels, false, null, controller);
+  const isCurrent = () => state.getGeneration() === generation;
+
+  void credentialScan(
+    { targets, timeoutMs, concurrency, tls, tlsSkipVerify },
+    {
+      controller,
+      onScanProgress: (done, total) => {
+        if (isCurrent()) state.updateScanProgress(done, total);
+      },
+      onProbeProgress: (done, total) => {
+        if (isCurrent()) state.updateProbeProgress(done, total);
+      },
+      onResult: (result) => {
+        if (isCurrent()) state.updateResult(result);
+      },
+    },
+  )
+    .then((results) => {
+      if (isCurrent()) state.finishScan(results);
+    })
+    .catch((e: Error) => {
+      if (isCurrent()) state.failScan(e.message);
+    });
+}
+
+scanRouter.post('/credential-scan', (req, res) => {
+  const state = req.app.get('state') as AppState;
+  const status = state.getState().status;
+
+  if (status === 'scanning' || status === 'paused') {
+    res.status(409).json({ error: 'A scan is already in progress.' });
+    return;
+  }
+
+  const body = req.body as {
+    targets?: unknown;
+    timeoutMs?: unknown;
+    concurrency?: unknown;
+    tls?: unknown;
+    tlsSkipVerify?: unknown;
+  };
+
+  if (!Array.isArray(body.targets) || body.targets.length === 0) {
+    res.status(400).json({ error: 'targets must be a non-empty array.' });
+    return;
+  }
+
+  const targets: CredentialTarget[] = [];
+  for (let i = 0; i < body.targets.length; i++) {
+    const row = body.targets[i] as {
+      host?: unknown;
+      port?: unknown;
+      username?: unknown;
+      password?: unknown;
+    };
+    const host = row?.host;
+    const port = row?.port;
+    if (
+      typeof host !== 'string' ||
+      !host ||
+      typeof port !== 'number' ||
+      !Number.isInteger(port) ||
+      port < 1 ||
+      port > 65535
+    ) {
+      res
+        .status(400)
+        .json({ error: `targets[${i}] must have a non-empty host and a port between 1-65535.` });
+      return;
+    }
+    targets.push({
+      host,
+      port,
+      username: typeof row.username === 'string' && row.username ? row.username : undefined,
+      password: typeof row.password === 'string' && row.password ? row.password : undefined,
+    });
+  }
+
+  try {
+    // Degenerates to "reject more than 65,536 targets" here — every entry is
+    // already a bare host, not a CIDR, so this just reuses the same ceiling
+    // rather than needing a second, parallel size cap.
+    assertScanSize(targets.map((t) => t.host));
+  } catch (e) {
+    res.status(400).json({ error: (e as Error).message });
+    return;
+  }
+
+  const timeoutMs = typeof body.timeoutMs === 'number' ? Math.max(1, body.timeoutMs) : 1000;
+  const concurrency = typeof body.concurrency === 'number' ? Math.max(1, body.concurrency) : 100;
+  const tls = body.tls === true;
+  const tlsSkipVerify = body.tlsSkipVerify === true;
+
+  // Runs in background — the caller polls GET /api/results
+  launchCredentialScan(state, targets, timeoutMs, concurrency, tls, tlsSkipVerify);
 
   res.status(202).json({ status: 'scanning' });
 });

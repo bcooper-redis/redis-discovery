@@ -21,6 +21,13 @@ export interface ScanState {
   autoDetected: boolean;
   /** Milliseconds of active (non-paused) scan time so far; null before any scan has run. */
   elapsedMs: number | null;
+  /**
+   * False after a Credential Scan (or before any scan) — there's no
+   * replayable config to restart, since a Credential Scan's per-target
+   * passwords are never retained past the request that used them. Lets the
+   * UI hide Restart instead of showing a button that would just error.
+   */
+  restartable: boolean;
 }
 
 function emptyState(): ScanState {
@@ -32,6 +39,7 @@ function emptyState(): ScanState {
     targets: [],
     autoDetected: false,
     elapsedMs: null,
+    restartable: false,
   };
 }
 
@@ -99,13 +107,19 @@ export function createState() {
       endedAt = null;
       accumulatedPauseMs = 0;
     },
+    /**
+     * config is null for a Credential Scan: its "config" is the per-target
+     * credential list, and unlike a regular scan's config, that can't be
+     * kept around for a Restart without persisting passwords past the
+     * request that used them — so there's deliberately nothing to restart.
+     */
     startScan(
       targets: string[],
       autoDetected: boolean,
-      config: ScanConfig,
+      config: ScanConfig | null,
       ctrl: ScanController,
     ): number {
-      s = { ...emptyState(), status: 'scanning', targets, autoDetected };
+      s = { ...emptyState(), status: 'scanning', targets, autoDetected, restartable: config !== null };
       lastConfig = config;
       controller = ctrl;
       startedAt = Date.now();

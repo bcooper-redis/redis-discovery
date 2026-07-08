@@ -11,14 +11,6 @@ import { probeHost } from '../../../src/probe/index';
 
 const FIXTURES = path.join(__dirname, '../../fixtures/tls');
 
-/** Minimal RESP command name extractor from a raw buffer. */
-function parseCommandName(data: Buffer): string {
-  // RESP array: *N\r\n$L\r\nCMD\r\n...
-  const lines = data.toString().split('\r\n');
-  const dollarIdx = lines.findIndex((l) => l.startsWith('$'));
-  return (lines[dollarIdx + 1] ?? '').toLowerCase();
-}
-
 /** Write a RESP bulk string response. */
 function bulkString(s: string): string {
   return `$${Buffer.byteLength(s)}\r\n${s}\r\n`;

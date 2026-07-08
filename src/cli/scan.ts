@@ -4,15 +4,8 @@ import type { DiscoverOptions } from '../inventory/discover';
 import { expandPorts } from '../scanner/ports';
 import { detectLocalCidrs } from '../scanner/cidr';
 import { formatTable, formatJson } from './format';
+import { clearLine, writeProgress } from './progress';
 import type { ScanConfig } from '../types';
-
-function clearLine(): void {
-  if (process.stderr.isTTY) process.stderr.write('\r\x1b[K');
-}
-
-function writeProgress(msg: string): void {
-  if (process.stderr.isTTY) process.stderr.write(`\r\x1b[K${msg}`);
-}
 
 interface ScanOpts {
   cidr: string[];

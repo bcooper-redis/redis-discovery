@@ -319,7 +319,9 @@
   function renderControlButtons(state) {
     const scanning = state.status === 'scanning';
     const paused = state.status === 'paused';
-    const canRestart = ['done', 'error', 'stopped'].includes(state.status);
+    // restartable is false after a Credential Scan — its per-target
+    // passwords are never kept around, so there's nothing to replay.
+    const canRestart = state.restartable && ['done', 'error', 'stopped'].includes(state.status);
 
     pauseResumeBtn.style.display = scanning || paused ? '' : 'none';
     pauseResumeBtn.textContent = paused ? 'Resume' : 'Pause';
