@@ -15,6 +15,7 @@
         <a href="/results.html">Results</a>
         <a href="/settings.html">Settings</a>
         <a href="/about.html">About</a>
+        <a href="/user-guide.html" target="_blank" rel="noopener">Help</a>
       </nav>
     </header>
 
@@ -47,20 +48,14 @@
             </p>
             <div class="csv-upload-row">
               <label for="csv-upload" class="btn secondary">Upload CSV</label>
-              <input
-                type="file"
-                id="csv-upload"
-                accept=".csv,text/csv"
-                style="display: none"
-              />
+              <input type="file" id="csv-upload" accept=".csv,text/csv" style="display: none" />
               <span id="csv-upload-status" class="hint"></span>
             </div>
             <p class="hint">
               CSV replaces the list above — one target per line: <code>host</code> or
-              <code>host,port</code>. A header row is fine. This form applies the same
-              Credentials fields below to every uploaded target — for a CSV with its own
-              username/password per host, use
-              <a href="/credential-scan.html">Credential Scan</a> instead.
+              <code>host,port</code>. A header row is fine. This form applies the same Credentials
+              fields below to every uploaded target — for a CSV with its own username/password per
+              host, use <a href="/credential-scan.html">Credential Scan</a> instead.
             </p>
           </div>
         </div>
