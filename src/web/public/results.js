@@ -469,7 +469,16 @@
     authBtn.type = 'button';
     authBtn.className = 'secondary';
     authBtn.textContent = 'Authenticate';
-    authBtn.addEventListener('click', () => openAuthDialog(r.host, r.port));
+    if (r.anonymousStatus === 'open') {
+      // Already fully readable with no credentials — authenticating
+      // wouldn't unlock anything, and a nopass ACL user would accept any
+      // password typed in, misleadingly flipping this row's badge to
+      // "authed" for a value that was never actually validated.
+      authBtn.disabled = true;
+      authBtn.title = 'This target already allows anonymous access — nothing to authenticate.';
+    } else {
+      authBtn.addEventListener('click', () => openAuthDialog(r.host, r.port));
+    }
     actionTd.appendChild(authBtn);
     tr.appendChild(actionTd);
 

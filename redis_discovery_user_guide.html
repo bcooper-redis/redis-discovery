@@ -670,6 +670,7 @@ redis.example.com:6380
       </table></div>
       <h4>Authenticate button</h4>
       <p>Each row can offer an Authenticate action to provide credentials for one host after discovery. The dialog takes an optional ACL Username and a required Password. Submitting authenticates to that host and updates its row with full inventory on success. Credentials are used for that request only and are not retained for restart or future scans.</p>
+      <p>Disabled (grayed out) for a row whose Auth column already reads <b>open</b> — anonymous access already returned full inventory, so there's nothing further to unlock. Authenticating an open row would also be misleading: a Redis ACL user configured with <code>nopass</code> accepts any password at all, so a successful attempt there wouldn't actually validate the credentials you typed.</p>
       <h4>TLS certificate info without Redis credentials</h4>
       <p>For TLS endpoints, Redis Discovery can collect certificate metadata from the handshake even when Redis-level auth is required — Subject, Issuer, Valid from, Valid to, Self-signed status, Trust status, and SHA-256 fingerprint. This is often the only useful information for an auth-required TLS endpoint when you lack credentials.</p>
     </section>
